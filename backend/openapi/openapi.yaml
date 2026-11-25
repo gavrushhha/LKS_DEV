@@ -1,0 +1,1050 @@
+openapi: 3.1.0
+info:
+  title: "ЛКС — Расписание (read-only) и Журнал, этап 1"
+  version: 1.1.0
+  description: |
+    REST API первого этапа разработки ЛКС.
+
+    Модуль «Расписание» — только чтение. Источник данных — база ERP «Тандем.Университет»;
+    ЛКС не создаёт, не изменяет и не удаляет занятия. Сервис выполняет SELECT к реплике
+    источника, приводит данные к модели API и кэширует результат. Запись в источник запрещена
+    на уровне прав пользователя БД.
+
+    Модуль «Журнал» — чтение и запись в собственной БД ЛКС (схема education): занятия,
+    оценки, посещаемость, ведомости. Связь с занятием расписания — по внешнему идентификатору
+    источника, без внешнего ключа между базами.
+
+    Соглашения:
+    * формат данных — JSON, UTF-8, даты ISO 8601, время с часовым поясом;
+    * ошибки — RFC 9457, тип содержимого application/problem+json;
+    * пагинация — курсорная, размер страницы по умолчанию 50, максимум 200;
+    * изменение состояния — с заголовком If-Match (ETag) для защиты от потерянных обновлений;
+    * массовые операции — с заголовком Idempotency-Key (UUID), срок хранения 24 часа.
+
+servers:
+  - url: "https://api.lks.local"
+    description: "dev"
+  - url: "https://api.stage.lks.local"
+    description: "stage"
+
+tags:
+  - name: Schedule
+    description: "Расписание занятий из Тандема — только чтение, фильтрация, дельта"
+  - name: Journal
+    description: "Занятия, оценки, посещаемость, сводка по дисциплине"
+  - name: Statements
+    description: "Ведомости — формирование, закрытие, выгрузка"
+  - name: Dictionaries
+    description: "Справочники: группы, дисциплины, преподаватели, аудитории, шкалы"
+  - name: System
+    description: "Служебные эндпоинты и состояние источника данных"
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/v1/schedule:
+    get:
+      tags: [Schedule]
+      operationId: getSchedule
+      summary: "Расписание за период с фильтрами"
+      description: |
+        Только чтение. Обязателен хотя бы один из фильтров group_id, teacher_id, room_id,
+        student_id. Период — не более 92 дней. Студент видит только свои группы,
+        преподаватель — только свои занятия, родитель — данные привязанного ребёнка.
+
+        Данные отдаются из кэша ЛКС; актуальность — не более 60 секунд от момента чтения
+        источника. Если источник недоступен, ответ отдаётся из последнего успешного снимка
+        с заголовком X-Data-Stale: true.
+      parameters:
+        - name: group_id
+          in: query
+          schema: {type: string, format: uuid}
+        - name: teacher_id
+          in: query
+          schema: {type: string, format: uuid}
+        - name: room_id
+          in: query
+          schema: {type: string, format: uuid}
+        - name: student_id
+          in: query
+          schema: {type: string, format: uuid}
+        - name: date_from
+          in: query
+          required: true
+          schema: {type: string, format: date}
+        - name: date_to
+          in: query
+          required: true
+          schema: {type: string, format: date}
+        - name: lesson_type
+          in: query
+          description: "Фильтр по виду занятия"
+          schema:
+            type: string
+            enum: [lecture, practice, lab, seminar, exam, consultation, other]
+        - name: include_cancelled
+          in: query
+          description: "Включать отменённые в источнике занятия"
+          schema: {type: boolean, default: false}
+        - name: view
+          in: query
+          description: "Представление ответа"
+          schema:
+            type: string
+            enum: [flat, by_day]
+            default: flat
+      responses:
+        "200":
+          description: "Список занятий"
+          headers:
+            ETag:
+              schema: {type: string}
+            Cache-Control:
+              schema: {type: string, example: "private, max-age=60"}
+            X-Data-Stale:
+              description: "true, если источник недоступен и данные из снимка"
+              schema: {type: string, enum: ["true", "false"]}
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: "#/components/schemas/ScheduleEntry"}
+                  meta: {$ref: "#/components/schemas/PageMeta"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "503": {$ref: "#/components/responses/SourceUnavailable"}
+
+  /api/v1/schedule/entries/{entry_id}:
+    get:
+      tags: [Schedule]
+      operationId: getScheduleEntry
+      summary: "Карточка занятия"
+      description: "entry_id — идентификатор занятия в источнике, передаётся как есть."
+      parameters:
+        - name: entry_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: "Занятие"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ScheduleEntry"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/v1/schedule/rooms/{room_id}/occupancy:
+    get:
+      tags: [Schedule]
+      operationId: getRoomOccupancy
+      summary: "Занятость аудитории за день"
+      description: "Только чтение. Используется для поиска свободных аудиторий."
+      parameters:
+        - name: room_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: date
+          in: query
+          required: true
+          schema: {type: string, format: date}
+      responses:
+        "200":
+          description: "Интервалы занятости"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  date: {type: string, format: date}
+                  busy:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        pair_number: {type: integer}
+                        starts_at: {type: string, example: "09:00"}
+                        ends_at: {type: string, example: "10:30"}
+                        group: {$ref: "#/components/schemas/Ref"}
+                        discipline: {$ref: "#/components/schemas/Ref"}
+                  free_pairs:
+                    type: array
+                    items: {type: integer}
+
+  /api/v1/schedule/bell-schedules:
+    get:
+      tags: [Schedule]
+      operationId: listBellSchedules
+      summary: "Звонковое расписание"
+      description: "Только чтение: наборы пар с временем начала и окончания из источника."
+      responses:
+        "200":
+          description: "Список звонковых расписаний"
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/BellSchedule"}
+
+  /api/v1/schedule/source-status:
+    get:
+      tags: [System]
+      operationId: getScheduleSourceStatus
+      summary: "Состояние источника расписания"
+      description: |
+        Диагностика для фронтенда и мониторинга: режим доступа к источнику, время последнего
+        успешного чтения, отставание, признак устаревания данных.
+      responses:
+        "200":
+          description: "Состояние источника"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SourceStatus"}
+
+  /api/v1/journal/offerings:
+    get:
+      tags: [Journal]
+      operationId: listJournalOfferings
+      summary: "Дисциплины, доступные для ведения журнала"
+      description: "Для преподавателя — свои дисциплины, для methodist и admin — все, для студента — свои."
+      parameters:
+        - name: group_id
+          in: query
+          schema: {type: string, format: uuid}
+        - name: teacher_id
+          in: query
+          schema: {type: string, format: uuid}
+        - name: period_id
+          in: query
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: "Список дисциплин"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: "#/components/schemas/Offering"}
+                  meta: {$ref: "#/components/schemas/PageMeta"}
+
+  /api/v1/journal/offerings/{offering_id}/lessons:
+    parameters:
+      - $ref: "#/components/parameters/OfferingId"
+    get:
+      tags: [Journal]
+      operationId: listLessons
+      summary: "Занятия журнала по дисциплине"
+      parameters:
+        - name: date_from
+          in: query
+          schema: {type: string, format: date}
+        - name: date_to
+          in: query
+          schema: {type: string, format: date}
+      responses:
+        "200":
+          description: "Список занятий"
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/Lesson"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    post:
+      tags: [Journal]
+      operationId: createLesson
+      summary: "Создать занятие в журнале"
+      description: |
+        Роли teacher (по своей дисциплине) и methodist. Если занятие соответствует паре в
+        расписании, передаётся schedule_entry_external_id; иначе создаётся занятие вне
+        расписания с флагом extra. Существование пары проверяется запросом к модулю расписания.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/LessonCreate"}
+      responses:
+        "201":
+          description: "Занятие создано"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Lesson"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/UnprocessableEntity"}
+
+  /api/v1/journal/lessons/{lesson_id}:
+    parameters:
+      - name: lesson_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    patch:
+      tags: [Journal]
+      operationId: patchLesson
+      summary: "Изменить занятие — тема, тип, домашнее задание"
+      description: "Правка возможна в течение 30 дней после даты занятия, далее только methodist."
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                topic: {type: string, maxLength: 500}
+                lesson_type:
+                  type: string
+                  enum: [lecture, practice, lab, seminar, exam, consultation]
+                homework: {type: string, maxLength: 5000}
+                comment: {type: string, maxLength: 2000}
+      responses:
+        "200":
+          description: "Обновлённое занятие"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Lesson"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "412": {$ref: "#/components/responses/PreconditionFailed"}
+
+  /api/v1/journal/offerings/{offering_id}/grades:
+    parameters:
+      - $ref: "#/components/parameters/OfferingId"
+    get:
+      tags: [Journal]
+      operationId: listGrades
+      summary: "Оценки по дисциплине"
+      parameters:
+        - name: student_id
+          in: query
+          schema: {type: string, format: uuid}
+        - name: lesson_id
+          in: query
+          schema: {type: string, format: uuid}
+        - name: date_from
+          in: query
+          schema: {type: string, format: date}
+        - name: date_to
+          in: query
+          schema: {type: string, format: date}
+      responses:
+        "200":
+          description: "Оценки"
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/Grade"}
+
+  /api/v1/journal/offerings/{offering_id}/grades:bulk:
+    parameters:
+      - $ref: "#/components/parameters/OfferingId"
+    post:
+      tags: [Journal]
+      operationId: bulkUpsertGrades
+      summary: "Массовая запись оценок"
+      description: |
+        Принимает до 500 записей за вызов. Идемпотентно по Idempotency-Key: повторный вызов
+        с тем же ключом возвращает исходный результат и не создаёт дублей. Частичные ошибки
+        возвращаются в errors с индексами записей.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/GradeBulkRequest"}
+      responses:
+        "200":
+          description: "Результат массовой записи"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BulkResult"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/UnprocessableEntity"}
+
+  /api/v1/journal/grades/{grade_id}:
+    parameters:
+      - name: grade_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    patch:
+      tags: [Journal]
+      operationId: patchGrade
+      summary: "Изменить оценку"
+      description: |
+        Комментарий обязателен при изменении более чем через 24 часа или при понижении оценки.
+        Каждая правка пишется в аудит и публикует событие grade.updated.
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [value]
+              properties:
+                value: {type: string, maxLength: 10}
+                comment: {type: string, maxLength: 500}
+      responses:
+        "200":
+          description: "Обновлённая оценка"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Grade"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "412": {$ref: "#/components/responses/PreconditionFailed"}
+    delete:
+      tags: [Journal]
+      operationId: deleteGrade
+      summary: "Удалить оценку"
+      description: "Мягкое удаление с обязательной причиной. Доступно teacher и methodist, пишется в аудит."
+      parameters:
+        - name: reason
+          in: query
+          required: true
+          schema: {type: string, minLength: 3, maxLength: 300}
+      responses:
+        "204": {description: "Удалено"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+
+  /api/v1/journal/offerings/{offering_id}/attendance:bulk:
+    parameters:
+      - $ref: "#/components/parameters/OfferingId"
+    post:
+      tags: [Journal]
+      operationId: bulkUpsertAttendance
+      summary: "Массовая отметка посещаемости"
+      description: "До 200 записей за вызов, идемпотентно по Idempotency-Key."
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/AttendanceBulkRequest"}
+      responses:
+        "200":
+          description: "Результат"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BulkResult"}
+
+  /api/v1/journal/offerings/{offering_id}/summary:
+    parameters:
+      - $ref: "#/components/parameters/OfferingId"
+    get:
+      tags: [Journal]
+      operationId: getJournalSummary
+      summary: "Сводка по дисциплине — БРС, пропуски, текущий рейтинг"
+      responses:
+        "200":
+          description: "Сводка по студентам"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  offering_id: {type: string, format: uuid}
+                  grading_scale: {$ref: "#/components/schemas/GradingScale"}
+                  students:
+                    type: array
+                    items: {$ref: "#/components/schemas/StudentSummary"}
+
+  /api/v1/journal/offerings/{offering_id}/history:
+    parameters:
+      - $ref: "#/components/parameters/OfferingId"
+    get:
+      tags: [Journal]
+      operationId: getJournalHistory
+      summary: "История изменений оценок и посещаемости"
+      description: "Доступно teacher (своя дисциплина), methodist, admin и curator."
+      responses:
+        "200":
+          description: "Записи аудита"
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/AuditRecord"}
+
+  /api/v1/statements:
+    post:
+      tags: [Statements]
+      operationId: createStatement
+      summary: "Сформировать ведомость"
+      description: |
+        Роли teacher (своя дисциплина) и methodist. Ведомость фиксирует состав студентов
+        и оценки на момент формирования. Повторное формирование по той же дисциплине и
+        периоду создаёт новую версию.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/StatementCreate"}
+      responses:
+        "201":
+          description: "Ведомость создана"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Statement"}
+        "409": {$ref: "#/components/responses/Conflict"}
+
+  /api/v1/statements/{statement_id}:
+    parameters:
+      - name: statement_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Statements]
+      operationId: getStatement
+      summary: "Получить ведомость"
+      responses:
+        "200":
+          description: "Ведомость"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Statement"}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/v1/statements/{statement_id}/pdf:
+    parameters:
+      - name: statement_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Statements]
+      operationId: downloadStatementPdf
+      summary: "Скачать ведомость в PDF"
+      description: "Возвращает бинарный поток PDF; файл хранится в S3."
+      responses:
+        "200":
+          description: "PDF"
+          content:
+            application/pdf:
+              schema: {type: string, format: binary}
+        "404": {$ref: "#/components/responses/NotFound"}
+
+  /api/v1/statements/{statement_id}/close:
+    parameters:
+      - name: statement_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    post:
+      tags: [Statements]
+      operationId: closeStatement
+      summary: "Закрыть ведомость"
+      description: |
+        После закрытия правки оценок по дисциплине за период запрещены: ответ 403 с кодом
+        statement_closed. Публикует событие statement.closed.
+      responses:
+        "200":
+          description: "Ведомость закрыта"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Statement"}
+        "409": {$ref: "#/components/responses/Conflict"}
+
+  /api/v1/dictionaries/groups:
+    get:
+      tags: [Dictionaries]
+      operationId: listGroups
+      summary: "Учебные группы"
+      responses:
+        "200":
+          description: "Список групп"
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/DictionaryItem"}
+
+  /api/v1/dictionaries/disciplines:
+    get:
+      tags: [Dictionaries]
+      operationId: listDisciplines
+      summary: "Дисциплины"
+      parameters:
+        - name: q
+          in: query
+          schema: {type: string}
+      responses:
+        "200":
+          description: "Список дисциплин"
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/DictionaryItem"}
+
+  /api/v1/dictionaries/teachers:
+    get:
+      tags: [Dictionaries]
+      operationId: listTeachers
+      summary: "Преподаватели"
+      responses:
+        "200":
+          description: "Список преподавателей"
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/DictionaryItem"}
+
+  /api/v1/dictionaries/rooms:
+    get:
+      tags: [Dictionaries]
+      operationId: listRooms
+      summary: "Аудитории"
+      responses:
+        "200":
+          description: "Список аудиторий"
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/DictionaryItem"}
+
+  /api/v1/dictionaries/grading-scales:
+    get:
+      tags: [Dictionaries]
+      operationId: listGradingScales
+      summary: "Шкалы оценивания"
+      responses:
+        "200":
+          description: "Список шкал"
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/GradingScale"}
+
+  /health:
+    get:
+      tags: [System]
+      operationId: health
+      security: []
+      summary: "Проверка живости процесса"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, example: ok}
+                  version: {type: string}
+
+  /ready:
+    get:
+      tags: [System]
+      operationId: ready
+      security: []
+      summary: "Готовность зависимостей — БД ЛКС, БД Тандема, Redis, шина"
+      responses:
+        "200":
+          description: "Готов"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, example: ok}
+                  checks:
+                    type: object
+                    additionalProperties: {type: string}
+        "503":
+          description: "Зависимость недоступна"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: "UUID запроса для идемпотентности массовых операций"
+      schema: {type: string, format: uuid}
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: "Текущий ETag ресурса"
+      schema: {type: string}
+    OfferingId:
+      name: offering_id
+      in: path
+      required: true
+      description: "Идентификатор дисциплины в периоде"
+      schema: {type: string, format: uuid}
+
+  responses:
+    BadRequest:
+      description: "Некорректный запрос"
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/Problem"}
+    Unauthorized:
+      description: "Требуется аутентификация"
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/Problem"}
+    Forbidden:
+      description: "Недостаточно прав"
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/Problem"}
+    NotFound:
+      description: "Ресурс не найден"
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/Problem"}
+    Conflict:
+      description: "Конфликт состояния: дубль, закрытая ведомость"
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/Problem"}
+    PreconditionFailed:
+      description: "Устаревший ETag, ресурс изменён другим пользователем"
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/Problem"}
+    UnprocessableEntity:
+      description: "Нарушено бизнес-правило"
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/Problem"}
+    SourceUnavailable:
+      description: "Источник данных недоступен и снимок отсутствует"
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/Problem"}
+
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: {type: string, example: "https://api.lks.local/errors/validation"}
+        title: {type: string, example: "Ошибка валидации"}
+        status: {type: integer, example: 422}
+        code:
+          type: string
+          example: schedule_source_unavailable
+          description: "Машиночитаемый код ошибки"
+        detail: {type: string}
+        instance: {type: string}
+        trace_id: {type: string}
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field: {type: string}
+              message: {type: string}
+              code: {type: string}
+
+    PageMeta:
+      type: object
+      properties:
+        next_cursor: {type: string, nullable: true}
+        total: {type: integer, nullable: true}
+        limit: {type: integer, example: 50}
+
+    ScheduleEntry:
+      type: object
+      readOnly: true
+      required: [id, date, pair_number, group, discipline, teacher]
+      properties:
+        id:
+          type: string
+          description: "Идентификатор занятия в источнике, используется как есть"
+        date: {type: string, format: date}
+        pair_number: {type: integer, minimum: 1, maximum: 10}
+        starts_at: {type: string, example: "09:00"}
+        ends_at: {type: string, example: "10:30"}
+        week_parity:
+          type: string
+          enum: [odd, even, every]
+          description: "Чётность недели"
+        lesson_type:
+          type: string
+          enum: [lecture, practice, lab, seminar, exam, consultation, other]
+        discipline: {$ref: "#/components/schemas/Ref"}
+        group: {$ref: "#/components/schemas/Ref"}
+        teacher: {$ref: "#/components/schemas/Ref"}
+        room: {$ref: "#/components/schemas/Ref"}
+        subgroup:
+          type: integer
+          nullable: true
+          description: "Номер подгруппы, если занятие для части группы"
+        is_cancelled:
+          type: boolean
+          description: "Признак отмены в источнике"
+        cancellation_reason: {type: string, nullable: true}
+        source:
+          type: object
+          properties:
+            system: {type: string, example: tandem}
+            updated_at:
+              type: string
+              format: date-time
+              description: "Время изменения записи в источнике"
+            fetched_at:
+              type: string
+              format: date-time
+              description: "Время чтения записи ЛКС"
+
+    SourceStatus:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [replica, snapshot]
+          description: "replica — чтение из реплики источника, snapshot — из локального снимка"
+        last_success_at: {type: string, format: date-time}
+        last_attempt_at: {type: string, format: date-time}
+        lag_seconds: {type: integer}
+        is_stale: {type: boolean}
+        source_schema_version: {type: string, nullable: true}
+        last_error: {type: string, nullable: true}
+
+    BellSchedule:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        pairs:
+          type: array
+          items:
+            type: object
+            properties:
+              number: {type: integer}
+              starts_at: {type: string, example: "09:00"}
+              ends_at: {type: string, example: "10:30"}
+
+    Offering:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        discipline: {$ref: "#/components/schemas/Ref"}
+        group: {$ref: "#/components/schemas/Ref"}
+        teacher: {$ref: "#/components/schemas/Ref"}
+        period: {$ref: "#/components/schemas/Ref"}
+        hours_total: {type: integer}
+        grading_scale_id: {type: string, format: uuid}
+
+    Lesson:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        offering_id: {type: string, format: uuid}
+        schedule_entry_external_id:
+          type: string
+          nullable: true
+          description: "Идентификатор занятия в источнике расписания"
+        date: {type: string, format: date}
+        pair_number: {type: integer}
+        lesson_type: {type: string, enum: [lecture, practice, lab, seminar, exam, consultation]}
+        topic: {type: string, nullable: true}
+        homework: {type: string, nullable: true}
+        extra:
+          type: boolean
+          description: "true, если занятие вне расписания"
+        closed:
+          type: boolean
+          description: "true, если ведомость закрыта и правки запрещены"
+        etag: {type: string}
+
+    LessonCreate:
+      type: object
+      required: [date, pair_number, lesson_type]
+      properties:
+        schedule_entry_external_id: {type: string, nullable: true}
+        date: {type: string, format: date}
+        pair_number: {type: integer, minimum: 1, maximum: 10}
+        lesson_type: {type: string, enum: [lecture, practice, lab, seminar, exam, consultation]}
+        topic: {type: string, maxLength: 500}
+        homework: {type: string, maxLength: 5000}
+        extra: {type: boolean, default: false}
+
+    Grade:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        offering_id: {type: string, format: uuid}
+        lesson_id: {type: string, format: uuid, nullable: true}
+        student: {$ref: "#/components/schemas/Ref"}
+        value: {type: string, example: "5"}
+        grade_type:
+          type: string
+          enum: [current, control, credit, exam, coursework]
+        weight:
+          type: number
+          example: 1.0
+          description: "Вес для расчёта БРС"
+        comment: {type: string, nullable: true}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        etag: {type: string}
+
+    GradeBulkRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 500
+          items:
+            type: object
+            required: [student_id, value, grade_type]
+            properties:
+              student_id: {type: string, format: uuid}
+              lesson_id: {type: string, format: uuid, nullable: true}
+              value: {type: string, maxLength: 10}
+              grade_type: {type: string, enum: [current, control, credit, exam, coursework]}
+              weight: {type: number, default: 1.0}
+              comment: {type: string, maxLength: 500}
+
+    AttendanceBulkRequest:
+      type: object
+      required: [lesson_id, items]
+      properties:
+        lesson_id: {type: string, format: uuid}
+        items:
+          type: array
+          maxItems: 200
+          items:
+            type: object
+            required: [student_id, status]
+            properties:
+              student_id: {type: string, format: uuid}
+              status:
+                type: string
+                enum: [present, absent, late, excused, sick]
+
+    BulkResult:
+      type: object
+      properties:
+        applied: {type: integer}
+        created: {type: integer}
+        updated: {type: integer}
+        skipped: {type: integer}
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              index: {type: integer}
+              code: {type: string}
+              message: {type: string}
+
+    StudentSummary:
+      type: object
+      properties:
+        student: {$ref: "#/components/schemas/Ref"}
+        avg: {type: number, nullable: true}
+        brs_points: {type: number, nullable: true}
+        grades_count: {type: integer}
+        absences: {type: integer}
+        lates: {type: integer}
+        risk:
+          type: boolean
+          description: "Признак группы риска по правилам кафедры"
+
+    GradingScale:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string, example: "Пятибалльная"}
+        values:
+          type: array
+          items: {type: string, example: "5"}
+        pass_value: {type: string, nullable: true}
+        brs_thresholds:
+          type: array
+          nullable: true
+          items:
+            type: object
+            properties:
+              min_points: {type: number}
+              grade: {type: string}
+
+    Statement:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        offering_id: {type: string, format: uuid}
+        period: {$ref: "#/components/schemas/Ref"}
+        version: {type: integer}
+        status: {type: string, enum: [draft, formed, closed, signed]}
+        rows:
+          type: array
+          items:
+            type: object
+            properties:
+              student: {$ref: "#/components/schemas/Ref"}
+              grade: {type: string, nullable: true}
+              points: {type: number, nullable: true}
+        formed_at: {type: string, format: date-time}
+        closed_at: {type: string, format: date-time, nullable: true}
+        pdf_url: {type: string, nullable: true}
+
+    StatementCreate:
+      type: object
+      required: [offering_id, period_id]
+      properties:
+        offering_id: {type: string, format: uuid}
+        period_id: {type: string, format: uuid}
+        include_students_without_grades: {type: boolean, default: true}
+
+    AuditRecord:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        entity: {type: string, example: grade}
+        entity_id: {type: string, format: uuid}
+        action: {type: string, enum: [create, update, delete]}
+        actor: {$ref: "#/components/schemas/Ref"}
+        before: {type: object, nullable: true}
+        after: {type: object, nullable: true}
+        created_at: {type: string, format: date-time}
+
+    DictionaryItem:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        code: {type: string, nullable: true}
+        name: {type: string}
+        source_system: {type: string, example: tandem}
+        extra:
+          type: object
+          additionalProperties: true
+
+    Ref:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
