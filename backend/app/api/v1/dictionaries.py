@@ -1,11 +1,16 @@
 """Справочники (ТЗ, раздел 5, эндпоинты dictionaries)."""
 
 import json
+
 from fastapi import APIRouter
+from pydantic import TypeAdapter
 from redis.asyncio import Redis
+
 from app.core.config import settings
 
 router = APIRouter(prefix="/dictionaries", tags=["Dictionaries"])
+dictionary_list_adapter = TypeAdapter(list[dict[str, object]])
+
 
 @router.get("/groups", summary="Учебные группы")
 async def list_groups() -> list[dict[str, object]]:
@@ -17,9 +22,9 @@ async def list_groups() -> list[dict[str, object]]:
         cached = await redis.get("dictionaries:groups")
 
         if cached is not None:
-            return json.loads(cached)
-        
-        groups = [
+            return dictionary_list_adapter.validate_json(cached)
+
+        groups: list[dict[str, object]] = [
             {
                 "id": "9167180b-d48f-4a43-8c7d-34f1ff25c7ee",
                 "code": "TEST-01",
@@ -60,9 +65,9 @@ async def list_teachers() -> list[dict[str, object]]:
         cached = await redis.get("dictionaries:teachers")
 
         if cached is not None:
-            return json.loads(cached)
+            return dictionary_list_adapter.validate_json(cached)
 
-        teachers = [
+        teachers: list[dict[str, object]] = [
             {
                 "id": "1edb7240-85b2-4a22-92df-68a8b4bd4241",
                 "code": "TEACHER-01",
@@ -91,9 +96,9 @@ async def list_rooms() -> list[dict[str, object]]:
         cached = await redis.get("dictionaries:rooms")
 
         if cached is not None:
-            return json.loads(cached)
+            return dictionary_list_adapter.validate_json(cached)
 
-        rooms = [
+        rooms: list[dict[str, object]] = [
             {
                 "id": "68cda925-f057-419b-b62b-f8b41b5be48f",
                 "code": "ROOM-К_1",
@@ -110,6 +115,7 @@ async def list_rooms() -> list[dict[str, object]]:
         )
 
         return rooms
+
 
 @router.get("/grading-scales", summary="Шкалы оценивания")
 async def list_grading_scales() -> list[dict[str, object]]:
