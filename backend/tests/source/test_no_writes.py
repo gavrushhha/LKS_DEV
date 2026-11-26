@@ -16,7 +16,7 @@ def _docstring_lines(tree: ast.AST) -> set[int]:
     """Строки, занятые докстрингами: их не проверяем (там текст, а не SQL)."""
     lines: set[int] = set()
     for node in ast.walk(tree):
-        if not isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+        if not isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
             continue
         body = getattr(node, "body", [])
         value = body[0].value if body else None

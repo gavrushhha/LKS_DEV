@@ -19,6 +19,6 @@ repos:
     hooks:
       - id: mypy
         name: mypy (backend)
-        entry: bash -c "cd backend && mypy app"
+        entry: python -m mypy --config-file backend/pyproject.toml backend/app
         language: system
         pass_filenames: false

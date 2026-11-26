@@ -26,7 +26,6 @@ dev = [
     "schemathesis>=3.33",
     "ruff>=0.6",
     "mypy>=1.11",
-    "types-redis",
     "pre-commit>=3.8",
 ]
 
