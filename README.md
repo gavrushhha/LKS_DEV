@@ -21,6 +21,7 @@ docs/       ТЗ, ADR, схемы
 * ТЗ: `docs/ТЗ_этап1_расписание_журнал.docx`
 * Контракт: `backend/openapi/openapi.yaml` (OpenAPI 3.1)
 * Бэклог: `docs/backlog/ЛКС_этап1_бэклог.xlsx`
+* Функции чтения Тандема: `backend/app/source/tandem/README.md`
 
 ## Быстрый старт
 

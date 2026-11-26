@@ -33,6 +33,17 @@ class Teacher:
     removal_date: datetime | None
 
 
+@dataclass(frozen=True)
+class RegistryElement:
+    """Запись реестра Тандема; тип записи и значение кодов требуют уточнения."""
+
+    id: str
+    title: str | None
+    number: str | None
+    user_code: str | None
+    guid: str | None
+
+
 class TandemDictionaryReader:
     """Функции для других слоёв приложения; доступ только на чтение."""
 
@@ -94,6 +105,54 @@ class TandemDictionaryReader:
         self._validate_page(after_id, limit)
         rows = await self._client.fetch(queries.TEACHERS_PAGE, after_id, limit)
         return [self._teacher_from_row(row) for row in rows]
+
+    async def teachers_by_name(
+        self, first_name: str, last_name: str, *, after_id: int | None = None, limit: int = 100
+    ) -> list[Teacher]:
+        """Найти преподавателей по полному имени и фамилии без учёта регистра."""
+        if not isinstance(first_name, str) or not isinstance(last_name, str):
+            raise ValueError("Имя и фамилия должны быть строками")
+        first_name, last_name = first_name.strip(), last_name.strip()
+        if not first_name or not last_name:
+            raise ValueError("Имя и фамилия обязательны")
+        self._validate_page(after_id, limit)
+        rows = await self._client.fetch(queries.TEACHERS_BY_NAME, first_name, last_name, after_id, limit)
+        return [self._teacher_from_row(row) for row in rows]
+
+    async def registry_elements_page(
+        self, *, after_id: int | None = None, limit: int = 100
+    ) -> list[RegistryElement]:
+        """Получить страницу записей реестра; отбор только дисциплин не подтверждён."""
+        self._validate_page(after_id, limit)
+        rows = await self._client.fetch(queries.REGISTRY_ELEMENTS_PAGE, after_id, limit)
+        return [
+            RegistryElement(str(r["id"]), r["title_p"], r["number_p"], r["usercode_p"], r["guid_p"])
+            for r in rows
+        ]
+
+    async def disciplines_page(
+        self, *, after_id: int | None = None, limit: int = 100
+    ) -> list[RegistryElement]:
+        """Получить страницу записей, связанных с таблицей дисциплин."""
+        self._validate_page(after_id, limit)
+        rows = await self._client.fetch(queries.DISCIPLINES_PAGE, after_id, limit)
+        return [
+            RegistryElement(str(r["id"]), r["title_p"], r["number_p"], r["usercode_p"], r["guid_p"])
+            for r in rows
+        ]
+
+    async def disciplines_by_title(
+        self, query: str, *, after_id: int | None = None, limit: int = 100
+    ) -> list[RegistryElement]:
+        """Найти дисциплины по подстроке названия без учёта регистра."""
+        if not isinstance(query, str) or not query.strip():
+            raise ValueError("Поисковая строка не должна быть пустой")
+        self._validate_page(after_id, limit)
+        rows = await self._client.fetch(queries.DISCIPLINES_BY_TITLE, query.strip(), after_id, limit)
+        return [
+            RegistryElement(str(r["id"]), r["title_p"], r["number_p"], r["usercode_p"], r["guid_p"])
+            for r in rows
+        ]
 
     @staticmethod
     def _teacher_from_row(row: dict) -> Teacher:  # type: ignore[type-arg]

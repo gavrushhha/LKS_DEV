@@ -97,3 +97,42 @@ WHERE ($1::bigint IS NULL OR t.id > $1)
 ORDER BY t.id
 LIMIT $2
 """
+
+TEACHERS_BY_NAME = """
+SELECT t.id, r.guid_p, c.lastname_p, c.firstname_p, c.middlename_p, t.removaldate_p
+FROM pps_entry_base_t t
+JOIN personrole_t r ON r.id = t.id
+JOIN person_t p ON p.id = r.person_id
+JOIN identitycard_t c ON c.id = p.identitycard_id
+WHERE lower(c.firstname_p) = lower($1) AND lower(c.lastname_p) = lower($2)
+  AND ($3::bigint IS NULL OR t.id > $3)
+ORDER BY t.id
+LIMIT $4
+"""
+
+REGISTRY_ELEMENTS_PAGE = """
+SELECT id, title_p, number_p, usercode_p, guid_p
+FROM epp_reg_base_t
+WHERE ($1::bigint IS NULL OR id > $1)
+ORDER BY id
+LIMIT $2
+"""
+
+DISCIPLINES_PAGE = """
+SELECT b.id, b.title_p, b.number_p, b.usercode_p, b.guid_p
+FROM epp_reg_base_t b
+JOIN epp_reg_discipline_t d ON d.id = b.id
+WHERE ($1::bigint IS NULL OR b.id > $1)
+ORDER BY b.id
+LIMIT $2
+"""
+
+DISCIPLINES_BY_TITLE = """
+SELECT b.id, b.title_p, b.number_p, b.usercode_p, b.guid_p
+FROM epp_reg_base_t b
+JOIN epp_reg_discipline_t d ON d.id = b.id
+WHERE strpos(lower(b.title_p), lower($1)) > 0
+  AND ($2::bigint IS NULL OR b.id > $2)
+ORDER BY b.id
+LIMIT $3
+"""
