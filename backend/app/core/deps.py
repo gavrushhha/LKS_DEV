@@ -5,6 +5,7 @@ from typing import Annotated
 
 from fastapi import Depends, Header
 
+from app.core.config import settings
 from app.core.errors import ApiError
 
 
@@ -21,6 +22,8 @@ async def get_current_user(authorization: Annotated[str | None, Header()] = None
     Пока — заглушка для локальной разработки: пользователь берётся из заголовка
     X-Dev-User, иначе подставляется methodist. В prod-окружении заглушка запрещена.
     """
+    if settings.app_env == "prod":
+        raise ApiError(503, "authentication_unavailable", "Authentication is not configured")
     if not authorization:
         raise ApiError(401, "unauthorized", "Требуется аутентификация")
     # TODO: разбор и валидация токена
