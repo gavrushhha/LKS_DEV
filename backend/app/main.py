@@ -9,8 +9,8 @@ from app import __version__
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.errors import register_exception_handlers
-from app.core.logging import configure_logging, get_logger
 from app.core.lks_db import lks_engine
+from app.core.logging import configure_logging, get_logger
 
 logger = get_logger(__name__)
 

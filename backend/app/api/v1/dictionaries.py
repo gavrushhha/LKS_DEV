@@ -39,7 +39,12 @@ async def list_rooms(service: DictionaryServiceDep) -> list[DictionaryItem]:
     return await service.list_items("rooms")
 
 
-@router.get("/grading-scales", summary="Шкалы оценивания", operation_id="listGradingScales", response_model_exclude_none=True)
+@router.get(
+    "/grading-scales",
+    summary="Шкалы оценивания",
+    operation_id="listGradingScales",
+    response_model_exclude_none=True,
+)
 async def list_grading_scales(session: LksSessionDep) -> list[GradingScale]:
     repository = GradingScaleRepository(session)
     service = GradingScaleService(repository)
