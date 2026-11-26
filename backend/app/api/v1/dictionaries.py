@@ -3,7 +3,9 @@
 from fastapi import APIRouter
 
 from app.core.dictionary_deps import DictionaryServiceDep
+from app.repositories.discipline_repository import DisciplineRepository
 from app.schemas.dictionaries import DictionaryItem
+from app.services.discipline_service import DisciplineService
 
 router = APIRouter(prefix="/dictionaries", tags=["Dictionaries"])
 
@@ -13,10 +15,13 @@ async def list_groups(service: DictionaryServiceDep) -> list[DictionaryItem]:
     return await service.list_items("groups")
 
 
-@router.get("/disciplines", summary="Дисциплины")
-async def list_disciplines(q: str | None = None) -> list[dict[str, object]]:
-    """TODO(T5.2)."""
-    raise NotImplementedError(q)
+@router.get(
+    "/disciplines", summary="Дисциплины", operation_id="listDisciplines", response_model_exclude_none=True
+)
+async def list_disciplines(q: str | None = None) -> list[DictionaryItem]:
+    repository = DisciplineRepository()
+    service = DisciplineService(repository)
+    return await service.list_items(q)
 
 
 @router.get(
