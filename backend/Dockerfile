@@ -4,6 +4,7 @@ WORKDIR /app
 
 FROM base AS deps
 COPY pyproject.toml ./
+COPY app ./app
 RUN pip install --upgrade pip && pip install .
 
 FROM base AS runtime
