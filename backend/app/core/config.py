@@ -26,6 +26,7 @@ class Settings(BaseSettings):
 
     redis_dsn: str = "redis://localhost:6379/0"
     schedule_cache_ttl_seconds: int = 60
+    dictionary_cache_ttl_seconds: int = Field(default=60, gt=0)
 
     identity_jwks_url: str = ""
     access_base_url: str = ""

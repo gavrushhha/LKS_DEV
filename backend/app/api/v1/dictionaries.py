@@ -1,52 +1,16 @@
-"""Справочники (ТЗ, раздел 5, эндпоинты dictionaries)."""
-
-import json
+"""HTTP-маршруты справочников. Получение данных и кэширование — в сервисе."""
 
 from fastapi import APIRouter
-from pydantic import TypeAdapter
-from redis.asyncio import Redis
 
-from app.core.config import settings
+from app.core.dictionary_deps import DictionaryServiceDep
+from app.schemas.dictionaries import DictionaryItem
 
 router = APIRouter(prefix="/dictionaries", tags=["Dictionaries"])
-dictionary_list_adapter = TypeAdapter(list[dict[str, object]])
 
 
-@router.get("/groups", summary="Учебные группы")
-async def list_groups() -> list[dict[str, object]]:
-    """Возвращает тестовый список групп."""
-    async with Redis.from_url(
-        settings.redis_dsn,
-        decode_responses=True,
-    ) as redis:
-        cached = await redis.get("dictionaries:groups")
-
-        if cached is not None:
-            return dictionary_list_adapter.validate_json(cached)
-
-        groups: list[dict[str, object]] = [
-            {
-                "id": "9167180b-d48f-4a43-8c7d-34f1ff25c7ee",
-                "code": "TEST-01",
-                "name": "Тестовая группа 1",
-                "source_system": "mock",
-                "extra": {},
-            },
-            {
-                "id": "3e2546a3-30b5-47da-bafd-e5be5acc30d4",
-                "code": "TEST-02",
-                "name": "Тестовая группа 2",
-                "source_system": "mock",
-                "extra": {},
-            },
-        ]
-
-        await redis.set(
-            "dictionaries:groups",
-            json.dumps(groups, ensure_ascii=False),
-            ex=60,
-        )
-        return groups
+@router.get("/groups", summary="Учебные группы", operation_id="listGroups")
+async def list_groups(service: DictionaryServiceDep) -> list[DictionaryItem]:
+    return await service.list_items("groups")
 
 
 @router.get("/disciplines", summary="Дисциплины")
@@ -55,66 +19,14 @@ async def list_disciplines(q: str | None = None) -> list[dict[str, object]]:
     raise NotImplementedError(q)
 
 
-@router.get("/teachers", summary="Преподаватели")
-async def list_teachers() -> list[dict[str, object]]:
-    """Возвращает тестовый список преподавателей."""
-    async with Redis.from_url(
-        settings.redis_dsn,
-        decode_responses=True,
-    ) as redis:
-        cached = await redis.get("dictionaries:teachers")
-
-        if cached is not None:
-            return dictionary_list_adapter.validate_json(cached)
-
-        teachers: list[dict[str, object]] = [
-            {
-                "id": "1edb7240-85b2-4a22-92df-68a8b4bd4241",
-                "code": "TEACHER-01",
-                "name": "Тестовое имя преподавателя",
-                "source_system": "mock",
-                "extra": {},
-            },
-        ]
-
-        await redis.set(
-            "dictionaries:teachers",
-            json.dumps(teachers, ensure_ascii=False),
-            ex=60,
-        )
-
-        return teachers
+@router.get("/teachers", summary="Преподаватели", operation_id="listTeachers")
+async def list_teachers(service: DictionaryServiceDep) -> list[DictionaryItem]:
+    return await service.list_items("teachers")
 
 
-@router.get("/rooms", summary="Аудитории")
-async def list_rooms() -> list[dict[str, object]]:
-    """Возвращает тестовые аудитории с кэшированием."""
-    async with Redis.from_url(
-        settings.redis_dsn,
-        decode_responses=True,
-    ) as redis:
-        cached = await redis.get("dictionaries:rooms")
-
-        if cached is not None:
-            return dictionary_list_adapter.validate_json(cached)
-
-        rooms: list[dict[str, object]] = [
-            {
-                "id": "68cda925-f057-419b-b62b-f8b41b5be48f",
-                "code": "ROOM-К_1",
-                "name": "Тестовая аудитория К_1",
-                "source_system": "mock",
-                "extra": {},
-            },
-        ]
-
-        await redis.set(
-            "dictionaries:rooms",
-            json.dumps(rooms, ensure_ascii=False),
-            ex=60,
-        )
-
-        return rooms
+@router.get("/rooms", summary="Аудитории", operation_id="listRooms")
+async def list_rooms(service: DictionaryServiceDep) -> list[DictionaryItem]:
+    return await service.list_items("rooms")
 
 
 @router.get("/grading-scales", summary="Шкалы оценивания")
