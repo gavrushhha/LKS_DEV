@@ -1,5 +1,6 @@
 """Пул соединений с репликой БД Тандема (только чтение)."""
 
+import asyncio
 from collections import deque
 from time import monotonic
 from typing import Any
@@ -25,11 +26,16 @@ class TandemClient:
 
     def __init__(self) -> None:
         self._pool: Any | None = None
+        self._lifecycle_lock = asyncio.Lock()
 
     async def connect(self) -> None:
         """Создать отдельный пул для чтения данных источника."""
-        if self._pool is not None:
-            return
+        async with self._lifecycle_lock:
+            if self._pool is None:
+                await self._open_pool()
+
+    async def _open_pool(self) -> None:
+        """Проверить настройки и создать пул под блокировкой жизненного цикла."""
         if not settings.tandem_db_dsn:
             raise ValueError("TANDEM_DB_DSN не задан")
         if not 0 <= settings.tandem_pool_min <= settings.tandem_pool_max <= 10:
@@ -70,6 +76,8 @@ class TandemClient:
         return settings.tandem_mode
 
     async def close(self) -> None:
-        if self._pool is not None:
-            pool, self._pool = self._pool, None
-            await pool.close()
+        async with self._lifecycle_lock:
+            if self._pool is not None:
+                pool = self._pool
+                await pool.close()
+                self._pool = None

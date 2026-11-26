@@ -3,12 +3,13 @@
 Результат содержит поля источника; преобразование в API пока не реализовано.
 """
 
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any, Literal
 
 from app.core.config import settings
 from app.source.tandem import queries
 from app.source.tandem.client import TandemClient
+from app.source.tandem.mapping import ScheduleCore, map_schedule_core
 
 FilterKind = Literal["group", "teacher", "room", "student"]
 _QUERIES = {
@@ -36,3 +37,11 @@ class TandemScheduleReader:
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
             raise ValueError("Количество записей должно быть от 1 до 200")
         return await self._client.fetch(_QUERIES[kind], source_id, date_from, date_to, limit)
+
+    async def fetch_core(
+        self, kind: FilterKind, source_id: int, date_from: date, date_to: date, limit: int = 50
+    ) -> list[ScheduleCore]:
+        """Получить и преобразовать подтверждённые поля после чтения источника."""
+        rows = await self.fetch(kind, source_id, date_from, date_to, limit)
+        fetched_at = datetime.now(UTC)
+        return [map_schedule_core(row, fetched_at) for row in rows]

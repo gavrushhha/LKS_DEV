@@ -53,3 +53,21 @@ async def test_period_limit_counts_both_dates():
     with pytest.raises(ValueError):
         await reader.fetch("group", 1, start, start + timedelta(days=settings.allowed_period_days))
     assert client.fetch.await_count == 1
+
+
+async def test_fetch_core_converts_rows_from_source():
+    client = AsyncMock(spec=TandemClient)
+    client.fetch.return_value = [
+        {
+            "id": 123,
+            "date_p": date(2026, 12, 7),
+            "bellentrynumber_p": 1,
+            "starttime_p": 525,
+            "endtime_p": 605,
+            "sysupdatedate_p": None,
+        }
+    ]
+    result = await TandemScheduleReader(client).fetch_core("group", 42, date(2026, 12, 7), date(2026, 12, 7))
+    assert len(result) == 1
+    assert (result[0].id, result[0].starts_at, result[0].ends_at) == ("123", "08:45", "10:05")
+    assert result[0].fetched_at.utcoffset() == timedelta(0)
