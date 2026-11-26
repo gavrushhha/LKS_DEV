@@ -16,3 +16,16 @@ class DictionaryItem(BaseModel):
     name: StrictStr
     source_system: StrictStr
     extra: dict[str, object] = Field(default_factory=dict)
+
+
+class BrsThreshold(BaseModel):
+    min_points: float
+    grade: str
+
+
+class GradingScale(BaseModel):
+    id: UUID
+    name: str
+    values: list[str]
+    pass_value: str | None = None
+    brs_thresholds: list[BrsThreshold] | None = None
