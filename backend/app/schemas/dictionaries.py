@@ -4,13 +4,15 @@ from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, StrictStr
+from pydantic.json_schema import SkipJsonSchema
 
 DictionaryKind = Literal["groups", "teachers", "rooms"]
 
 
 class DictionaryItem(BaseModel):
     id: UUID
-    code: StrictStr | None = None
+    # Старый кэш может содержать null, но HTTP-ответ опускает это поле.
+    code: StrictStr | SkipJsonSchema[None] = Field(default_factory=lambda: None)
     name: StrictStr
     source_system: StrictStr
     extra: dict[str, object] = Field(default_factory=dict)

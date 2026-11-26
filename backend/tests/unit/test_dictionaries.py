@@ -163,3 +163,7 @@ def test_dictionary_openapi() -> None:
     item = schema["components"]["schemas"]["DictionaryItem"]
     assert item["properties"]["id"]["format"] == "uuid"
     assert item["properties"]["name"]["type"] == "string"
+    code = item["properties"]["code"]
+    assert code["type"] == "string"
+    assert "default" not in code
+    assert "code" not in item["required"]
