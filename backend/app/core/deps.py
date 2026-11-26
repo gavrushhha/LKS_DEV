@@ -1,11 +1,12 @@
 """Зависимости FastAPI: текущий пользователь и проверка ролей."""
 
 from dataclasses import dataclass
-from typing import Annotated
+from typing import Annotated, cast
 
-from fastapi import Depends, Header
+from fastapi import Depends, Header, Request
 
 from app.core.errors import ApiError
+from app.source.tandem.client import TandemClient
 
 
 @dataclass(frozen=True)
@@ -28,6 +29,13 @@ async def get_current_user(authorization: Annotated[str | None, Header()] = None
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+async def get_tandem_client(request: Request) -> TandemClient:
+    """Вернуть общий клиент, подключив пул при первом обращении."""
+    client = cast(TandemClient, request.app.state.tandem_client)
+    await client.connect()
+    return client
 
 
 def require_roles(*allowed: str):  # type: ignore[no-untyped-def]

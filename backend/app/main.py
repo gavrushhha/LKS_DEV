@@ -10,6 +10,7 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
+from app.source.tandem.client import TandemClient
 
 logger = get_logger(__name__)
 
@@ -18,9 +19,13 @@ logger = get_logger(__name__)
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     logger.info("app_started", env=settings.app_env, tandem_mode=settings.tandem_mode)
-    # TODO(T3.3): инициализация пула Redis и подключения к источнику расписания
-    yield
-    logger.info("app_stopped")
+    # Соединение создаётся при явном вызове connect; пустой DSN не блокирует запуск.
+    app.state.tandem_client = TandemClient()
+    try:
+        yield
+    finally:
+        await app.state.tandem_client.close()
+        logger.info("app_stopped")
 
 
 app = FastAPI(

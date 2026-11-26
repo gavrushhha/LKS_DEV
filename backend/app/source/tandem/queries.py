@@ -46,3 +46,54 @@ SCHEDULE_BY_GROUP = _BASE.format(
       AND (r.removaldate_p IS NULL OR r.removaldate_p >= e.date_p::date)
 )"""
 )
+
+GROUP_BY_ID = """
+SELECT id, title_p, shorttitle_p, archival_p
+FROM group_t
+WHERE id = $1
+LIMIT 1
+"""
+
+ROOM_BY_ID = """
+SELECT id, number_p, title_p, cachedbuilding_id
+FROM places_place
+WHERE id = $1
+LIMIT 1
+"""
+
+GROUPS_PAGE = """
+SELECT id, title_p, shorttitle_p, archival_p
+FROM group_t
+WHERE ($1::bigint IS NULL OR id > $1)
+ORDER BY id
+LIMIT $2
+"""
+
+ROOMS_PAGE = """
+SELECT id, number_p, title_p, cachedbuilding_id
+FROM places_place
+WHERE ($1::bigint IS NULL OR id > $1)
+ORDER BY id
+LIMIT $2
+"""
+
+TEACHER_BY_ID = """
+SELECT t.id, r.guid_p, c.lastname_p, c.firstname_p, c.middlename_p, t.removaldate_p
+FROM pps_entry_base_t t
+JOIN personrole_t r ON r.id = t.id
+LEFT JOIN person_t p ON p.id = r.person_id
+LEFT JOIN identitycard_t c ON c.id = p.identitycard_id
+WHERE t.id = $1
+LIMIT 1
+"""
+
+TEACHERS_PAGE = """
+SELECT t.id, r.guid_p, c.lastname_p, c.firstname_p, c.middlename_p, t.removaldate_p
+FROM pps_entry_base_t t
+JOIN personrole_t r ON r.id = t.id
+LEFT JOIN person_t p ON p.id = r.person_id
+LEFT JOIN identitycard_t c ON c.id = p.identitycard_id
+WHERE ($1::bigint IS NULL OR t.id > $1)
+ORDER BY t.id
+LIMIT $2
+"""
