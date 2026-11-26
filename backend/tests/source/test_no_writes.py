@@ -19,7 +19,7 @@ def _docstring_lines(tree: ast.AST) -> set[int]:
         if not isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         body = getattr(node, "body", [])
-        value = body[0].value if body else None
+        value = body[0].value if body and isinstance(body[0], ast.Expr) else None
         if isinstance(value, ast.Constant) and isinstance(value.value, str):
             start = body[0].lineno
             end = body[0].end_lineno or start
@@ -43,3 +43,8 @@ def test_source_layer_has_no_write_statements() -> None:
 def test_guard_catches_real_write() -> None:
     """Самопроверка стража: строка записи действительно детектируется."""
     assert FORBIDDEN.search("INSERT INTO schedule_entry VALUES (1)")
+
+
+def test_docstrings_skip_non_expression_statements() -> None:
+    tree = ast.parse("def f():\n    if True:\n        pass\n")
+    assert _docstring_lines(tree) == set()

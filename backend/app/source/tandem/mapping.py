@@ -17,15 +17,15 @@ class ColumnMap:
 
 
 SCHEDULE_COLUMNS: tuple[ColumnMap, ...] = (
-    ColumnMap("schedule_entry", "id", "id", "уточнить имя PK"),
-    ColumnMap("schedule_entry", "study_date", "date", "уточнить имя"),
-    ColumnMap("schedule_entry", "pair_no", "pair_number", "уточнить имя"),
+    ColumnMap("timetableevent_t", "id", "id", "идентификатор источника"),
+    ColumnMap("timetableevent_t", "date_p", "date"),
+    ColumnMap("timetableevent_t", "bellentrynumber_p", "pair_number"),
     ColumnMap("schedule_entry", "week_parity", "week_parity", "числитель/знаменатель"),
     ColumnMap("schedule_entry", "lesson_kind_id", "lesson_type", "маппинг вида занятия"),
     ColumnMap("schedule_entry", "subgroup_no", "subgroup", "уточнить наличие"),
     ColumnMap("schedule_entry", "is_cancelled", "is_cancelled", "уточнить наличие"),
     ColumnMap("schedule_entry", "cancel_reason", "cancellation_reason", "уточнить наличие"),
-    ColumnMap("schedule_entry", "updated_at", "source.updated_at", "критично для дельты"),
+    ColumnMap("sc_event", "sysupdatedate_p", "source.updated_at", "не учитывает изменения связанных записей"),
 )
 
 LESSON_TYPE_MAP: dict[str, str] = {
