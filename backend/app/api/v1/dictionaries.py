@@ -15,7 +15,9 @@ async def list_groups(service: DictionaryServiceDep) -> list[DictionaryItem]:
     return await service.list_items("groups")
 
 
-@router.get("/disciplines", summary="Дисциплины", operation_id="listDisciplines", response_model_exclude_none=True)
+@router.get(
+    "/disciplines", summary="Дисциплины", operation_id="listDisciplines", response_model_exclude_none=True
+)
 async def list_disciplines(q: str | None = None) -> list[DictionaryItem]:
     repository = DisciplineRepository()
     service = DisciplineService(repository)
