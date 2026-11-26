@@ -1,6 +1,7 @@
 """Т5.1: API, кэш и восстановление после сбоев без внешнего Redis."""
 
 import json
+from unittest.mock import AsyncMock
 
 import pytest
 from httpx import AsyncClient
@@ -93,6 +94,33 @@ async def test_dictionary_api_cache(client: AsyncClient, kind: DictionaryKind, s
     if scenario not in ("hit", "redis_down", "write_error"):
         assert cache.writes == [(key, 60)]
         assert ADAPTER.validate_json(cache.values[key]) == expected
+
+
+@pytest.mark.parametrize("kind", KINDS)
+async def test_dictionary_omits_missing_code(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch, kind: DictionaryKind
+) -> None:
+    source = MockDictionarySource()
+    item = (await source.fetch(kind))[0]
+    record = item.model_dump(mode="json")
+    without_code = {key: value for key, value in record.items() if key != "code"}
+    without_code["extra"] = {"building": None}
+    fetch = AsyncMock(
+        return_value=[
+            DictionaryItem.model_validate(without_code),
+            DictionaryItem.model_validate({**without_code, "code": None}),
+            item,
+        ],
+    )
+    monkeypatch.setattr(source, "fetch", fetch)
+    service = DictionaryService(DictionaryRepository(source), MemoryCache(), ttl=60)
+    monkeypatch.setitem(app.dependency_overrides, get_dictionary_service, lambda: service)
+
+    for _ in range(2):
+        response = await client.get(f"/api/v1/dictionaries/{kind}")
+        assert response.status_code == 200
+        assert response.json() == [without_code, without_code, record]
+    fetch.assert_awaited_once_with(kind)
 
 
 async def test_cache_keys_and_expiration() -> None:

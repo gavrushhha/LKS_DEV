@@ -8,7 +8,7 @@ from app.schemas.dictionaries import DictionaryItem
 router = APIRouter(prefix="/dictionaries", tags=["Dictionaries"])
 
 
-@router.get("/groups", summary="Учебные группы", operation_id="listGroups")
+@router.get("/groups", summary="Учебные группы", operation_id="listGroups", response_model_exclude_none=True)
 async def list_groups(service: DictionaryServiceDep) -> list[DictionaryItem]:
     return await service.list_items("groups")
 
@@ -19,12 +19,14 @@ async def list_disciplines(q: str | None = None) -> list[dict[str, object]]:
     raise NotImplementedError(q)
 
 
-@router.get("/teachers", summary="Преподаватели", operation_id="listTeachers")
+@router.get(
+    "/teachers", summary="Преподаватели", operation_id="listTeachers", response_model_exclude_none=True
+)
 async def list_teachers(service: DictionaryServiceDep) -> list[DictionaryItem]:
     return await service.list_items("teachers")
 
 
-@router.get("/rooms", summary="Аудитории", operation_id="listRooms")
+@router.get("/rooms", summary="Аудитории", operation_id="listRooms", response_model_exclude_none=True)
 async def list_rooms(service: DictionaryServiceDep) -> list[DictionaryItem]:
     return await service.list_items("rooms")
 
