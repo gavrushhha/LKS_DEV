@@ -3,9 +3,12 @@
 from fastapi import APIRouter
 
 from app.core.dictionary_deps import DictionaryServiceDep
+from app.core.lks_db import LksSessionDep
 from app.repositories.discipline_repository import DisciplineRepository
-from app.schemas.dictionaries import DictionaryItem
+from app.repositories.grading_scale_repository import GradingScaleRepository
+from app.schemas.dictionaries import DictionaryItem, GradingScale
 from app.services.discipline_service import DisciplineService
+from app.services.grading_scale_service import GradingScaleService
 
 router = APIRouter(prefix="/dictionaries", tags=["Dictionaries"])
 
@@ -36,7 +39,8 @@ async def list_rooms(service: DictionaryServiceDep) -> list[DictionaryItem]:
     return await service.list_items("rooms")
 
 
-@router.get("/grading-scales", summary="Шкалы оценивания")
-async def list_grading_scales() -> list[dict[str, object]]:
-    """TODO(T5.3)."""
-    raise NotImplementedError
+@router.get("/grading-scales", summary="Шкалы оценивания", operation_id="listGradingScales", response_model_exclude_none=True)
+async def list_grading_scales(session: LksSessionDep) -> list[GradingScale]:
+    repository = GradingScaleRepository(session)
+    service = GradingScaleService(repository)
+    return await service.list_scales()
