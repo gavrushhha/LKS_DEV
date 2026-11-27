@@ -52,6 +52,12 @@ jobs:
         run: pytest -q -m "not integration and not e2e"
       - name: OpenAPI export
         run: python scripts/export_openapi.py
+      - name: Upload OpenAPI
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-openapi
+          path: backend/openapi/generated.json
+          if-no-files-found: error
 
   integration:
     runs-on: ubuntu-latest

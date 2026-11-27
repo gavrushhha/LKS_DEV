@@ -8,6 +8,7 @@ from uuid import uuid4
 
 import structlog
 from fastapi import FastAPI, Request
+from pydantic import BaseModel
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import create_async_engine
 from starlette.middleware.base import RequestResponseEndpoint
@@ -21,6 +22,11 @@ from app.core.errors import problem_response, register_exception_handlers
 from app.core.logging import configure_logging, get_logger
 
 logger = get_logger(__name__)
+
+
+class HealthResponse(BaseModel):
+    status: str
+    version: str
 
 
 @asynccontextmanager
@@ -80,7 +86,7 @@ register_exception_handlers(app)
 app.include_router(api_router, prefix="/api/v1")
 
 
-@app.get("/health", tags=["System"], summary="Живость процесса")
+@app.get("/health", tags=["System"], summary="Живость процесса", response_model=HealthResponse)
 async def health() -> dict[str, str]:
     return {"status": "ok", "version": __version__}
 

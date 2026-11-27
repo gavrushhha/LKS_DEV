@@ -5,9 +5,22 @@ from typing import Any
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 PROBLEM_CONTENT_TYPE = "application/problem+json"
+
+
+class Problem(BaseModel):
+    type: str
+    title: str
+    status: int
+    code: str
+    detail: str | None = None
+    instance: str | None = None
+    trace_id: str | None = None
+    errors: list[dict[str, Any]] | None = None
+    checks: dict[str, str] | None = None
 
 
 class ApiError(Exception):

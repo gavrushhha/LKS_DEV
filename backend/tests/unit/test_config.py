@@ -26,6 +26,17 @@ def test_secret_is_masked() -> None:
     assert "password" not in repr(settings)
 
 
+def test_prod_requires_identity_url() -> None:
+    with pytest.raises(ValidationError, match="IDENTITY_JWKS_URL"):
+        Settings(
+            app_env="prod",
+            lks_db_dsn=SecretStr("postgresql+asyncpg://user:password@database/lks"),
+            tandem_db_dsn=SecretStr("postgresql+asyncpg://user:password@source/tandem"),
+            identity_jwks_url="",
+            _env_file=None,
+        )
+
+
 def test_docs_disabled_in_production() -> None:
     import os
     import subprocess
@@ -37,6 +48,7 @@ def test_docs_disabled_in_production() -> None:
             "APP_ENV": "prod",
             "LKS_DB_DSN": "postgresql+asyncpg://user:test@database/lks",
             "TANDEM_DB_DSN": "postgresql+asyncpg://readonly:test@source/tandem",
+            "IDENTITY_JWKS_URL": "https://identity.example/.well-known/jwks.json",
         }
     )
     result = subprocess.run(  # noqa: S603

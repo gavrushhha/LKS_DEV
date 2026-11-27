@@ -87,6 +87,30 @@ async def test_generated_request_id(client: AsyncClient) -> None:
     UUID(response.headers["X-Request-ID"])
 
 
+async def test_success_preserves_request_id(client: AsyncClient) -> None:
+    response = await client.get("/health", headers={"X-Request-ID": "request-123"})
+    assert response.status_code == 200
+    assert response.headers["X-Request-ID"] == "request-123"
+
+
+async def test_invalid_body_returns_problem(client: AsyncClient) -> None:
+    from fastapi import Body
+
+    from app.main import app
+
+    async def accept_number(value: int = Body()) -> dict[str, int]:
+        return {"value": value}
+
+    app.add_api_route("/_test_body", accept_number, methods=["POST"])
+    try:
+        response = await client.post("/_test_body", json="invalid")
+        assert response.status_code == 400
+        assert response.json()["code"] == "validation_error"
+        assert response.headers["content-type"].startswith("application/problem+json")
+    finally:
+        app.router.routes.pop()
+
+
 async def test_invalid_request_id_is_replaced(client: AsyncClient) -> None:
     from uuid import UUID
 

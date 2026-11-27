@@ -44,6 +44,8 @@ class Settings(BaseSettings):
                 raise ValueError("Для stage/prod необходимо настроить LKS_DB_DSN")
         if self.app_env == "prod" and not self.tandem_db_dsn.get_secret_value():
             raise ValueError("Для prod необходимо настроить TANDEM_DB_DSN")
+        if self.app_env == "prod" and not self.identity_jwks_url.strip():
+            raise ValueError("Для prod необходимо настроить IDENTITY_JWKS_URL")
         return self
 
 

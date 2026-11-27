@@ -6,14 +6,20 @@ from collections.abc import Awaitable, Callable
 import aio_pika
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from sqlalchemy import text
 
 from app.core.config import settings
-from app.core.errors import problem_response
+from app.core.errors import Problem, problem_response
 from app.core.logging import get_logger
 
 router = APIRouter(tags=["System"])
 logger = get_logger(__name__)
+
+
+class ReadinessResponse(BaseModel):
+    status: str
+    checks: dict[str, str]
 
 
 async def check_database(request: Request) -> None:
@@ -52,7 +58,17 @@ CHECKS: dict[str, Callable[[Request], Awaitable[None]]] = {
 }
 
 
-@router.get("/ready", summary="Готовность зависимостей")
+@router.get(
+    "/ready",
+    summary="Готовность зависимостей",
+    response_model=ReadinessResponse,
+    responses={
+        503: {
+            "model": Problem,
+            "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}},
+        }
+    },
+)
 async def ready(request: Request) -> JSONResponse:
     async def run_check(name: str, check: Callable[[Request], Awaitable[None]]) -> tuple[str, str]:
         try:
