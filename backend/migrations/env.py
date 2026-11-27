@@ -8,7 +8,7 @@ from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.core.config import settings
-from app.models import journal  # noqa: F401  — регистрация моделей
+from app.models import journal, schedule_snapshot  # noqa: F401  — регистрация моделей
 from app.models.base import Base
 
 config = context.config

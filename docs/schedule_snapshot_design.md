@@ -1,0 +1,144 @@
+# ЛКС: локальный снимок расписания — проект
+
+Статус: проект для согласования по итогам созвона 27.11.2026. Актуальное поручение: получать расписание из Тандема в БД ЛКС, API читает из БД ЛКС. Редактирование источника Тандема и запись в него SQL не предусмотрены. ADR 0002 предлагал выбор реплики или снимка; решение о снимке уточняет прежнюю альтернативу.
+
+## Реализованная основа
+
+Подготовлены модели `schedule_snapshot`, `snapshot_schedule_entry` и `active_schedule_snapshot` и миграция `20261127_01`. Миграция ещё не применялась к PostgreSQL. Записи одной и той же пары могут существовать в нескольких снимках: ключ занятия — `(snapshot_id, source_id)`. Активный снимок выбирается отдельно для каждой области; составной внешний ключ не позволяет указать снимок другой области.
+
+Пока это только структура: синхронизация, проверка состояния `ready` перед активацией, атомарное переключение, загрузка справочников и чтение API не реализованы. Указатель БД сам по себе не запрещает активацию снимка со статусом `loading` или `failed`. Значение и границы `scope` ещё нужно определить.
+
+```mermaid
+erDiagram
+    schedule_snapshot ||--o{ snapshot_schedule_entry : "содержит"
+    schedule_snapshot ||--o| active_schedule_snapshot : "указатель"
+    schedule_snapshot {
+        uuid id PK
+        string scope
+        string status
+        timestamptz started_at
+        timestamptz completed_at
+    }
+    snapshot_schedule_entry {
+        uuid snapshot_id PK
+        string source_id PK
+        date lesson_date
+        int pair_number
+        int start_minutes
+        int end_minutes
+        timestamp source_updated_at
+    }
+    active_schedule_snapshot {
+        string scope PK
+        uuid snapshot_id FK
+    }
+```
+
+## Общая схема
+
+```mermaid
+flowchart LR
+    T["БД Тандема"] -->|"чтение"| S["Синхронизация"]
+    S -->|"снимок"| L["БД ЛКС"]
+    L -->|"чтение"| A["API расписания"]
+    A --> U["Потребители"]
+```
+
+## Предлагаемые таблицы
+
+Это целевая схема слоя расписания и связанных справочников, а не всех таблиц ЛКС; она пока не реализована. Имя `sync_run` ниже показывает логическую роль реализованной таблицы `schedule_snapshot`; структура записей отличается от текущей модели. ID источника сохраняем без изменения как строки; формат внешнего API нужно согласовать с командой. Студенты и участие в учебных группах показаны отдельно: академическая группа и учебная группа Тандема — разные сущности.
+
+```mermaid
+erDiagram
+    sync_run ||--o{ schedule_entry : "загрузила"
+    schedule_entry ||--o{ schedule_teacher : "преподаватели"
+    teacher ||--o{ schedule_teacher : "связан"
+    schedule_entry ||--o{ schedule_room : "аудитории"
+    room ||--o{ schedule_room : "связана"
+    schedule_entry ||--o{ schedule_study_group : "учебные группы"
+    study_group ||--o{ schedule_study_group : "связана"
+    study_group ||--o{ study_group_member : "состав"
+    student ||--o{ study_group_member : "состоит"
+    academic_group ||--o{ student : "текущая группа"
+    discipline ||--o{ schedule_entry : "дисциплина"
+
+    sync_run {
+        uuid id PK
+        timestamptz started_at
+        timestamptz completed_at
+        string status
+    }
+    schedule_entry {
+        string source_id PK
+        date lesson_date
+        int pair_number
+        int starts_minutes
+        int ends_minutes
+        string discipline_id FK
+        uuid sync_run_id FK
+        timestamp source_updated_at
+    }
+    teacher {
+        string source_id PK
+        string full_name
+    }
+    room {
+        string source_id PK
+        string number
+        string building
+    }
+    academic_group {
+        string source_id PK
+        string title
+    }
+    study_group {
+        string source_id PK
+        string title
+    }
+    student {
+        string source_id PK
+        string academic_group_id FK
+    }
+    discipline {
+        string source_id PK
+        string title
+    }
+    schedule_teacher {
+        string schedule_entry_id FK
+        string teacher_id FK
+    }
+    schedule_room {
+        string schedule_entry_id FK
+        string room_id FK
+    }
+    schedule_study_group {
+        string schedule_entry_id FK
+        string study_group_id FK
+    }
+    study_group_member {
+        string study_group_id FK
+        string student_id FK
+        date removal_date
+    }
+```
+
+Таблицы связей должны иметь составные уникальные ключи. `source_updated_at` в Тандеме имеет тип timestamp без часового пояса: не присваивать UTC без подтверждения. Для корректной истории переводов текущей академической группы недостаточно — нужна проверенная история членства. Чётность, отмены, актуальность версий, состав данных и правила правок подлежат уточнению; значения по умолчанию не должны выдавать неизвестное за подтверждённое.
+
+## Синхронизация — предлагаемый подход
+
+1. Чтение ограниченными выборками с read-only доступом. Выгрузка без фильтра по группе/преподавателю и периоду запрещена действующим ТЗ; для фоновой загрузки всех необходимых данных нужно согласовать отдельную стратегию и бюджет с владельцем Тандема.
+2. Запись в отдельный набор данных ЛКС с отметкой запуска синхронизации. Повторная загрузка того же ID не должна создавать дубликаты.
+3. После успешной загрузки всех страниц и связей область данных переключается атомарно. Ошибка не удаляет предыдущий рабочий снимок.
+4. Исчезновение из частичной выборки не означает удаление; отмены, переносы и удаление обрабатывать только по согласованному правилу полной выборки конкретной области.
+5. Фиксировать время последнего успешного обновления и ошибки, различать пустой результат и ошибку источника.
+
+Это проект, а не реализованная синхронизация. Требуется определить периодичность, области загрузки, маркер изменений, способ обработки удалений и прав доступа; `sysupdatedate_p` занятия может не отражать изменения связанных сущностей.
+
+## Открытые решения
+
+- Какую среду и учётную запись использовать для чтения источника, какие данные допустимо хранить локально и сколько времени?
+- Получать данные опросом БД, через НСИ или сочетанием? Подтвердить правила и лимиты для фоновой синхронизации.
+- Как трактовать основную версию с NULL-датами, отмены и историю состава групп?
+- bigint, guid_p или оба идентификатора в публичном контракте? Как передавать их в функции коллег?
+- Нужны ли в первом этапе студенты и персональные данные для персонального расписания? Если да, определить минимальные поля и разграничение доступа.
+- Какой набор API требуется показать и кто отвечает за журнал и ведомости? В `docs/api_inventory_snapshot.md` приведены операции текущего OpenAPI; существование контракта не означает реализацию.
