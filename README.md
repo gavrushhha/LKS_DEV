@@ -25,14 +25,18 @@ docs/       ТЗ, ADR, схемы
 ## Быстрый старт
 
 ```bash
+cp .env.example .env
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-cp .env.example .env
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8000 --env-file ../.env
 ```
 
 Проверка: `curl localhost:8000/health`, документация — `localhost:8000/docs`.
+
+Файл `.env` в корне используется и Docker Compose, и этой командой запуска. В примере
+адрес источника расписания указан как заглушка: `/ready` вернёт ошибку, пока не будет
+настроен доступный `TANDEM_DB_DSN`.
 
 ## Правила разработки
 

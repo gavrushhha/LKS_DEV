@@ -19,10 +19,10 @@ class User:
 async def get_current_user(authorization: Annotated[str | None, Header()] = None) -> User:
     """TODO(T10.1): проверка JWT через identity (JWKS) и кэш ролей.
 
-    Пока — заглушка для локальной разработки: пользователь берётся из заголовка
-    X-Dev-User, иначе подставляется methodist. В prod-окружении заглушка запрещена.
+    Пока — заглушка для локальной разработки: при наличии заголовка Authorization
+    возвращается тестовый пользователь. В stage и prod заглушка запрещена.
     """
-    if settings.app_env == "prod":
+    if settings.app_env in {"stage", "prod"}:
         raise ApiError(503, "authentication_unavailable", "Аутентификация не настроена")
     if not authorization:
         raise ApiError(401, "unauthorized", "Требуется аутентификация")

@@ -1,6 +1,9 @@
 """Проверка единого формата ошибок (ТЗ, 3.4)."""
 
+import pytest
 from httpx import AsyncClient
+
+from app.core.config import settings
 
 
 async def test_not_implemented_returns_problem_json(client: AsyncClient) -> None:
@@ -16,6 +19,19 @@ async def test_schedule_requires_auth(client: AsyncClient) -> None:
     response = await client.get("/api/v1/schedule?date_from=2027-02-01&date_to=2027-02-10")
     assert response.status_code == 401
     assert response.json()["code"] == "unauthorized"
+
+
+@pytest.mark.parametrize("environment", ["stage", "prod"])
+async def test_development_auth_is_disabled(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch, environment: str
+) -> None:
+    monkeypatch.setattr(settings, "app_env", environment)
+    response = await client.get(
+        "/api/v1/schedule?date_from=2027-02-01&date_to=2027-02-10",
+        headers={"Authorization": "Bearer test"},
+    )
+    assert response.status_code == 503
+    assert response.json()["code"] == "authentication_unavailable"
 
 
 async def test_not_found_has_trace_id(client: AsyncClient) -> None:
@@ -62,3 +78,17 @@ async def test_unexpected_error_is_safe(client: AsyncClient) -> None:
         assert "private detail" not in response.text
     finally:
         app.router.routes.pop()
+
+
+async def test_generated_request_id(client: AsyncClient) -> None:
+    from uuid import UUID
+
+    response = await client.get("/health")
+    UUID(response.headers["X-Request-ID"])
+
+
+async def test_invalid_request_id_is_replaced(client: AsyncClient) -> None:
+    from uuid import UUID
+
+    response = await client.get("/health", headers={"X-Request-ID": "invalid value"})
+    UUID(response.headers["X-Request-ID"])
