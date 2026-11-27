@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     tandem_pool_max: int = 10
     tandem_statement_timeout_ms: int = 5000
     tandem_budget_rpm: int = 60
+
+    nsi_basic_username: str = ""
+    nsi_basic_password: SecretStr = SecretStr("")
+    nsi_destination_id: str = "dev_api"
 
     redis_dsn: str = "redis://localhost:6379/0"
     schedule_cache_ttl_seconds: int = 60

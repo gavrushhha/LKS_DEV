@@ -10,6 +10,7 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
+from app.integrations.nsi import router as nsi_router
 from app.source.tandem.client import TandemClient
 
 logger = get_logger(__name__)
@@ -37,6 +38,7 @@ app = FastAPI(
 
 register_exception_handlers(app)
 app.include_router(api_router, prefix="/api/v1")
+app.include_router(nsi_router)
 
 
 @app.get("/health", tags=["System"], summary="Живость процесса")
