@@ -11,6 +11,12 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 PROBLEM_CONTENT_TYPE = "application/problem+json"
 
 
+class ProblemError(BaseModel):
+    field: str | None = None
+    message: str | None = None
+    code: str | None = None
+
+
 class Problem(BaseModel):
     type: str
     title: str
@@ -19,7 +25,7 @@ class Problem(BaseModel):
     detail: str | None = None
     instance: str | None = None
     trace_id: str | None = None
-    errors: list[dict[str, Any]] | None = None
+    errors: list[ProblemError] | None = None
     checks: dict[str, str] | None = None
 
 

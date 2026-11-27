@@ -21,6 +21,7 @@ from app.core.config import settings
 from app.core.errors import problem_response, register_exception_handlers
 from app.core.logging import configure_logging, get_logger
 
+configure_logging(settings.log_level)
 logger = get_logger(__name__)
 
 
@@ -31,7 +32,6 @@ class HealthResponse(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    configure_logging(settings.log_level)
     logger.info("app_started", env=settings.app_env, tandem_mode=settings.tandem_mode)
     app.state.rabbitmq = None
     app.state.rabbitmq_lock = asyncio.Lock()

@@ -9,6 +9,24 @@ from app.core.errors import problem_response
 from app.main import app
 
 
+def assert_schema_matches(expected, actual, components) -> None:
+    if "$ref" in actual:
+        actual = components[actual["$ref"].rsplit("/", 1)[-1]]
+    if "anyOf" in actual:
+        actual = next(option for option in actual["anyOf"] if option.get("type") != "null")
+        if "$ref" in actual:
+            actual = components[actual["$ref"].rsplit("/", 1)[-1]]
+    if "type" in expected:
+        assert actual.get("type") == expected["type"]
+    for name, prop in expected.get("properties", {}).items():
+        assert name in actual.get("properties", {})
+        assert_schema_matches(prop, actual["properties"][name], components)
+    if "items" in expected:
+        assert_schema_matches(expected["items"], actual["items"], components)
+    if isinstance(expected.get("additionalProperties"), dict):
+        assert_schema_matches(expected["additionalProperties"], actual["additionalProperties"], components)
+
+
 def test_system_routes_match_contract() -> None:
     contract_path = Path(__file__).resolve().parents[2] / "openapi" / "openapi.yaml"
     contract = yaml.safe_load(contract_path.read_text(encoding="utf-8"))
@@ -37,15 +55,11 @@ def test_generated_system_schemas_match_contract() -> None:
             "$ref"
         ]
         generated = actual["components"]["schemas"][ref.rsplit("/", 1)[-1]]
-        for name, prop in expected["properties"].items():
-            assert generated["properties"][name]["type"] == prop["type"]
+        assert_schema_matches(expected, generated, actual["components"]["schemas"])
     assert "503" in actual["paths"]["/ready"]["get"]["responses"]
     assert "application/problem+json" in actual["paths"]["/ready"]["get"]["responses"]["503"]["content"]
     expected_problem = contract["components"]["schemas"]["Problem"]
     generated_problem = actual["components"]["schemas"]["Problem"]
     assert set(expected_problem["required"]) == set(generated_problem["required"])
     assert set(expected_problem["properties"]).issubset(generated_problem["properties"])
-    for name, prop in expected_problem["properties"].items():
-        generated_prop = generated_problem["properties"][name]
-        variants = generated_prop.get("anyOf", [generated_prop])
-        assert any(variant.get("type") == prop["type"] for variant in variants)
+    assert_schema_matches(expected_problem, generated_problem, actual["components"]["schemas"])
