@@ -22,6 +22,10 @@ class ReadinessResponse(BaseModel):
     checks: dict[str, str]
 
 
+class ProblemJSONResponse(JSONResponse):
+    media_type = "application/problem+json"
+
+
 async def check_database(request: Request) -> None:
     async with request.app.state.db.connect() as connection:
         await connection.execute(text("SELECT 1"))
@@ -61,12 +65,14 @@ CHECKS: dict[str, Callable[[Request], Awaitable[None]]] = {
 @router.get(
     "/ready",
     summary="Готовность зависимостей",
-    response_model=ReadinessResponse,
+    response_model=None,
+    response_class=ProblemJSONResponse,
     responses={
+        200: {"content": {"application/json": {"schema": ReadinessResponse.model_json_schema()}}},
         503: {
             "model": Problem,
             "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}},
-        }
+        },
     },
 )
 async def ready(request: Request) -> JSONResponse:

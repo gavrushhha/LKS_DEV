@@ -51,13 +51,12 @@ def test_generated_system_schemas_match_contract() -> None:
     actual = app.openapi()
     for path in ("/health", "/ready"):
         expected = contract["paths"][path]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
-        ref = actual["paths"][path]["get"]["responses"]["200"]["content"]["application/json"]["schema"][
-            "$ref"
-        ]
-        generated = actual["components"]["schemas"][ref.rsplit("/", 1)[-1]]
+        generated = actual["paths"][path]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
         assert_schema_matches(expected, generated, actual["components"]["schemas"])
     assert "503" in actual["paths"]["/ready"]["get"]["responses"]
-    assert "application/problem+json" in actual["paths"]["/ready"]["get"]["responses"]["503"]["content"]
+    assert set(actual["paths"]["/ready"]["get"]["responses"]["503"]["content"]) == {
+        "application/problem+json"
+    }
     expected_problem = contract["components"]["schemas"]["Problem"]
     generated_problem = actual["components"]["schemas"]["Problem"]
     assert set(expected_problem["required"]) == set(generated_problem["required"])
