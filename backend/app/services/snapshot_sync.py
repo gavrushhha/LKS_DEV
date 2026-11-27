@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
+from app.core.logging import get_logger
 from app.models.schedule_snapshot import (
     ActiveScheduleSnapshot,
     ScheduleSnapshot,
@@ -21,6 +22,7 @@ from app.source.tandem.mapping import map_schedule_core, map_schedule_links
 from app.source.tandem.schedule_reader import FilterKind, TandemScheduleReader
 
 _LIMIT = 200
+logger = get_logger(__name__)
 
 
 class IncompleteSnapshotError(ValueError):
@@ -106,6 +108,7 @@ async def sync_schedule_snapshot(
     date_to: date,
 ) -> str:
     """Загрузить полную ограниченную выборку и атомарно заменить снимок данной области."""
+    logger.info("schedule_snapshot_started", filter_kind=kind)
     rows = await reader.fetch(kind, source_id, date_from, date_to, limit=_LIMIT)
     if len(rows) >= _LIMIT:
         raise IncompleteSnapshotError("Достигнут лимит источника: полнота снимка не подтверждена")
@@ -120,4 +123,6 @@ async def sync_schedule_snapshot(
         links.extend((entry.source_id, kind, related_id) for kind, related_id in map_schedule_links(row))
     scope = f"{kind}:{source_id}:{date_from.isoformat()}:{date_to.isoformat()}"
     async with session.begin():
-        return await session.run_sync(_write_snapshot, scope, entries, links)
+        snapshot_id = await session.run_sync(_write_snapshot, scope, entries, links)
+    logger.info("schedule_snapshot_synced", filter_kind=kind, entries_count=len(entries))
+    return snapshot_id

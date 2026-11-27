@@ -4,6 +4,7 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pydantic import SecretStr
 
 from app.source.tandem.client import TandemClient
 
@@ -14,7 +15,7 @@ async def test_concurrent_connect_creates_only_one_pool(monkeypatch):
     pool = MagicMock()
     create_pool = AsyncMock(return_value=pool)
     monkeypatch.setattr(module.asyncpg, "create_pool", create_pool)
-    monkeypatch.setattr(module.settings, "tandem_db_dsn", "postgresql://example/test")
+    monkeypatch.setattr(module.settings, "tandem_db_dsn", SecretStr("postgresql://example/test"))
     client = TandemClient()
 
     await asyncio.gather(client.connect(), client.connect())
@@ -71,7 +72,7 @@ async def test_fetch_uses_read_only_transaction_and_returns_dicts():
 async def test_connect_rejects_timeout_above_limit(monkeypatch):
     from app.source.tandem import client as module
 
-    monkeypatch.setattr(module.settings, "tandem_db_dsn", "postgresql://example/test")
+    monkeypatch.setattr(module.settings, "tandem_db_dsn", SecretStr("postgresql://example/test"))
     monkeypatch.setattr(module.settings, "tandem_statement_timeout_ms", 5001)
     with pytest.raises(ValueError, match="таймаута"):
         await TandemClient().connect()

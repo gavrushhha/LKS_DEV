@@ -15,14 +15,13 @@ _requests: deque[float] = deque()
 
 
 class TandemClient:
-    """Тонкая обёртка над asyncpg-пулом. Реализация — T2.1.
+    """Пул соединений с БД Тандема только для чтения."""
 
-    Требования (ТЗ, 2.2):
-      * отдельный пользователь БД только с правами SELECT;
-      * пул не более TANDEM_POOL_MAX соединений;
-      * statement_timeout = TANDEM_STATEMENT_TIMEOUT_MS;
-      * бюджет запросов не более TANDEM_BUDGET_RPM в минуту (учёт в метрике).
-    """
+    # Требования (ТЗ, 2.2):
+    # * отдельный пользователь БД только с правами SELECT;
+    # * пул не более TANDEM_POOL_MAX соединений;
+    # * statement_timeout = TANDEM_STATEMENT_TIMEOUT_MS;
+    # * бюджет запросов не более TANDEM_BUDGET_RPM в минуту (учёт в метрике).
 
     def __init__(self) -> None:
         self._pool: Any | None = None
@@ -36,14 +35,15 @@ class TandemClient:
 
     async def _open_pool(self) -> None:
         """Проверить настройки и создать пул под блокировкой жизненного цикла."""
-        if not settings.tandem_db_dsn:
+        dsn = settings.tandem_db_dsn.get_secret_value()
+        if not dsn:
             raise ValueError("TANDEM_DB_DSN не задан")
         if not 0 <= settings.tandem_pool_min <= settings.tandem_pool_max <= 10:
             raise ValueError("Размер пула Тандема должен быть от 0 до 10")
         if settings.tandem_pool_max < 1 or not 0 < settings.tandem_statement_timeout_ms <= 5000:
             raise ValueError("Некорректные настройки пула или таймаута")
         self._pool = await asyncpg.create_pool(
-            dsn=settings.tandem_db_dsn,
+            dsn=dsn,
             min_size=settings.tandem_pool_min,
             max_size=settings.tandem_pool_max,
             timeout=2,
@@ -73,9 +73,11 @@ class TandemClient:
 
     @property
     def mode(self) -> str:
+        """Получить режим источника расписания."""
         return settings.tandem_mode
 
     async def close(self) -> None:
+        """Закрыть пул соединений с Тандемом."""
         async with self._lifecycle_lock:
             if self._pool is not None:
                 pool = self._pool

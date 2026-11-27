@@ -11,17 +11,17 @@ from app.source.tandem.client import TandemClient
 
 @dataclass(frozen=True)
 class User:
+    """Текущий пользователь и его роли."""
+
     id: str
     login: str
     roles: tuple[str, ...]
 
 
 async def get_current_user(authorization: Annotated[str | None, Header()] = None) -> User:
-    """TODO(T10.1): проверка JWT через identity (JWKS) и кэш ролей.
-
-    Пока — заглушка для локальной разработки: пользователь берётся из заголовка
-    X-Dev-User, иначе подставляется methodist. В prod-окружении заглушка запрещена.
-    """
+    """Получить текущего пользователя из заголовка авторизации."""
+    # Пока — заглушка для локальной разработки: пользователь берётся из заголовка
+    # X-Dev-User, иначе подставляется methodist. В prod-окружении заглушка запрещена.
     if not authorization:
         raise ApiError(401, "unauthorized", "Требуется аутентификация")
     # TODO: разбор и валидация токена
@@ -39,6 +39,8 @@ async def get_tandem_client(request: Request) -> TandemClient:
 
 
 def require_roles(*allowed: str):  # type: ignore[no-untyped-def]
+    """Создать зависимость для проверки разрешённых ролей."""
+
     async def _dep(user: CurrentUser) -> User:
         if not set(allowed) & set(user.roles):
             raise ApiError(

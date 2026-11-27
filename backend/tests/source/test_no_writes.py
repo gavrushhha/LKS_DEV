@@ -1,8 +1,4 @@
-"""Страж: в слое источника нет операций записи (ТЗ, 2.2 и 5.6).
-
-Тест ломается, если в app/source/ появится INSERT/UPDATE/DELETE.
-Это блокирующее требование: ЛКС не пишет в БД Тандема.
-"""
+"""Проверки запрета записи в источник Тандема."""
 
 import ast
 import re
@@ -28,6 +24,7 @@ def _docstring_lines(tree: ast.AST) -> set[int]:
 
 
 def test_source_layer_has_no_write_statements() -> None:
+    """Проверить отсутствие команд записи в слое источника."""
     offenders: list[str] = []
     for path in SOURCE_DIR.rglob("*.py"):
         source = path.read_text(encoding="utf-8")
@@ -46,5 +43,6 @@ def test_guard_catches_real_write() -> None:
 
 
 def test_docstrings_skip_non_expression_statements() -> None:
+    """Проверить обработку функций без докстринга."""
     tree = ast.parse("def f():\n    if True:\n        pass\n")
     assert _docstring_lines(tree) == set()

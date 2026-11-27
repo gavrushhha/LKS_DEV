@@ -1,9 +1,7 @@
-"""Декларативный маппинг «источник → модель API» (ТЗ, 5.4).
-
-Все имена таблиц и колонок собраны здесь, чтобы изменение схемы источника
-правилось в одном файле. Значения помечены «уточнить» до получения схемы
-от владельца Тандема (открытые вопросы 1–5 в ТЗ).
-"""
+"""Маппинг полей Тандема в модель расписания."""
+# Все имена таблиц и колонок собраны здесь, чтобы изменение схемы источника
+# правилось в одном файле. Значения помечены «уточнить» до получения схемы
+# от владельца Тандема (открытые вопросы 1–5 в ТЗ).
 
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -13,6 +11,8 @@ from typing import Any
 
 @dataclass(frozen=True)
 class ColumnMap:
+    """Соответствие поля источника и поля API."""
+
     source_table: str | None
     source_column: str | None
     api_field: str
@@ -71,10 +71,8 @@ LESSON_TYPE_MAP: dict[str, str] = {
 
 
 def unresolved_schedule_fields() -> tuple[str, ...]:
-    """Вернуть поля, для которых пока не указан источник в БД.
-
-    source.system и source.fetched_at формируются приложением, а не читаются из БД.
-    """
+    """Получить поля расписания с неподтверждённым источником."""
+    # source.system и source.fetched_at формируются приложением, а не читаются из БД.
     generated = {"source.system", "source.fetched_at"}
     return tuple(
         column.api_field

@@ -9,6 +9,8 @@ from app.source.tandem.client import TandemClient
 
 @dataclass(frozen=True)
 class Group:
+    """Академическая группа Тандема."""
+
     id: str
     title: str | None
     short_title: str | None
@@ -17,6 +19,8 @@ class Group:
 
 @dataclass(frozen=True)
 class Room:
+    """Аудитория Тандема."""
+
     id: str
     number: str | None
     title: str | None
@@ -25,6 +29,8 @@ class Room:
 
 @dataclass(frozen=True)
 class Teacher:
+    """Запись преподавателя Тандема."""
+
     id: str
     role_guid: str | None
     last_name: str | None
