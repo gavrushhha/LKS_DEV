@@ -9,7 +9,15 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models.schedule_snapshot import ActiveScheduleSnapshot, ScheduleSnapshot, SnapshotScheduleEntry
+from app.models.schedule_snapshot import (
+    ActiveScheduleSnapshot,
+    ScheduleSnapshot,
+    SnapshotEntryDiscipline,
+    SnapshotEntryRoom,
+    SnapshotEntryStudyGroup,
+    SnapshotEntryTeacher,
+    SnapshotScheduleEntry,
+)
 from app.services.snapshot_sync import (
     IncompleteSnapshotError,
     _entry,
@@ -30,6 +38,10 @@ def db():
     for table in (
         ScheduleSnapshot.__table__,
         SnapshotScheduleEntry.__table__,
+        SnapshotEntryTeacher.__table__,
+        SnapshotEntryRoom.__table__,
+        SnapshotEntryStudyGroup.__table__,
+        SnapshotEntryDiscipline.__table__,
         ActiveScheduleSnapshot.__table__,
     ):
         table.create(engine)
@@ -50,6 +62,10 @@ def row():
         "place_p": "101",
         "pps_p": "Преподаватель",
         "students_p": "Группа",
+        "teacher_ids": [501],
+        "room_ids": [601, 602],
+        "study_group_ids": [701],
+        "discipline_ids": [801],
     }
 
 
@@ -94,6 +110,14 @@ async def test_invalid_data_never_starts_publication(invalid_rows):
     session.begin.assert_not_called()
 
 
+async def test_invalid_teacher_links_do_not_publish():
+    reader, session = AsyncMock(), AsyncMock()
+    reader.fetch.return_value = [{**row(), "teacher_ids": [1, 1]}]
+    with pytest.raises(ValueError):
+        await sync_schedule_snapshot(reader, session, "group", 1, date(2026, 12, 7), date(2026, 12, 7))
+    session.begin.assert_not_called()
+
+
 def test_null_text_fields_from_tandem_are_preserved():
     source = {**row(), "activity_p": None, "pps_p": None, "students_p": None}
     entry = _entry(source, datetime.now(UTC))
@@ -116,4 +140,8 @@ async def test_sync_reads_source_and_publishes_in_one_transaction(db):
         reader, AsyncSessionAdapter(), "group", 1, date(2026, 12, 7), date(2026, 12, 7)
     )
     assert str(db.get(ActiveScheduleSnapshot, "group:1:2026-12-07:2026-12-07").snapshot_id) == result
+    assert db.query(SnapshotEntryTeacher).one().teacher_id == "501"
+    assert {room.room_id for room in db.query(SnapshotEntryRoom).all()} == {"601", "602"}
+    assert db.query(SnapshotEntryStudyGroup).one().study_group_id == "701"
+    assert db.query(SnapshotEntryDiscipline).one().discipline_id == "801"
     reader.fetch.assert_awaited_once_with("group", 1, date(2026, 12, 7), date(2026, 12, 7), limit=200)

@@ -26,11 +26,29 @@ SCHEDULE_COLUMNS: tuple[ColumnMap, ...] = (
     ColumnMap("ttevent_t", "starttime_p", "starts_at", "минуты от полуночи; сверено на примере"),
     ColumnMap("ttevent_t", "endtime_p", "ends_at", "минуты от полуночи; сверено на примере"),
     ColumnMap(None, None, "week_parity", "способ определения не подтверждён"),
-    ColumnMap("epp_group_type_t", "title_p", "lesson_type", "значения справочника не подтверждены"),
-    ColumnMap("ttevent_t", "activity_p", "discipline", "только название; ID через связи"),
-    ColumnMap("ttevent_t", "students_p", "group", "только названия; ID через связи"),
-    ColumnMap("ttevent_t", "pps_p", "teacher", "только имена; ID через связи"),
-    ColumnMap("ttevent_t", "place_p", "room", "только названия; ID через связи"),
+    ColumnMap(None, None, "lesson_type", "связь и значения не подтверждены"),
+    ColumnMap(
+        "ttevent_t", "activity_p", "discipline", "текст; в проверенной выборке NULL; ID не подтверждён"
+    ),
+    ColumnMap(
+        "ttevent_t", "students_p", "group", "текст; в проверенной выборке NULL; связь с группой отдельно"
+    ),
+    ColumnMap("ttevent_t", "pps_p", "teacher", "текст; в проверенной выборке NULL"),
+    ColumnMap("ttevent_t", "place_p", "room", "текст; ID помещения получается через ttevent2place_t"),
+    ColumnMap("ttevent2pps_t", "pps_id", "teacher.source_ids", "связь по event_id; может быть несколько"),
+    ColumnMap("ttevent2place_t", "place_id", "room.source_ids", "связь по event_id; может быть несколько"),
+    ColumnMap(
+        "ttevent2realedugroup_t",
+        "realedugroup_id",
+        "study_group.source_ids",
+        "учебная группа, не академическая",
+    ),
+    ColumnMap(
+        "epp_reg_element_part_t",
+        "registryelement_id",
+        "discipline.source_ids",
+        "через учебную группу и epp_reg_discipline_t; проверено на одной группе",
+    ),
     ColumnMap(None, None, "subgroup", "источник не подтверждён"),
     ColumnMap(None, None, "is_cancelled", "признак отмены не подтверждён"),
     ColumnMap(None, None, "cancellation_reason", "источник не подтверждён"),
@@ -73,6 +91,26 @@ def minutes_to_time(value: int | None) -> str | None:
         raise ValueError("Время должно быть числом минут от 0 до 1439")
     hours, minutes = divmod(value, 60)
     return f"{hours:02d}:{minutes:02d}"
+
+
+def map_schedule_links(row: Mapping[str, Any]) -> tuple[tuple[str, str], ...]:
+    """Преобразовать проверенные ID преподавателей и аудиторий в строки."""
+    links: list[tuple[str, str]] = []
+    for field, kind in (
+        ("teacher_ids", "teacher"),
+        ("room_ids", "room"),
+        ("study_group_ids", "study_group"),
+        ("discipline_ids", "discipline"),
+    ):
+        values = row[field]
+        if not isinstance(values, list) or any(
+            isinstance(value, bool) or not isinstance(value, int) or not 0 < value < 2**63 for value in values
+        ):
+            raise ValueError("Некорректные идентификаторы связей занятия")
+        if len(set(values)) != len(values):
+            raise ValueError("Повторяющиеся связи занятия")
+        links.extend((kind, str(value)) for value in values)
+    return tuple(links)
 
 
 @dataclass(frozen=True)

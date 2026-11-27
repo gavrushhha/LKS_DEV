@@ -2,12 +2,22 @@
 
 from dataclasses import dataclass
 from datetime import date, datetime
+from uuid import UUID
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, literal, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.models.schedule_snapshot import ActiveScheduleSnapshot, ScheduleSnapshot, SnapshotScheduleEntry
+from app.models.schedule_dictionary import ScheduleDiscipline, ScheduleRoom, ScheduleTeacher
+from app.models.schedule_snapshot import (
+    ActiveScheduleSnapshot,
+    ScheduleSnapshot,
+    SnapshotEntryDiscipline,
+    SnapshotEntryRoom,
+    SnapshotEntryStudyGroup,
+    SnapshotEntryTeacher,
+    SnapshotScheduleEntry,
+)
 from app.source.tandem.schedule_reader import FilterKind
 
 
@@ -18,6 +28,65 @@ class SnapshotResult:
     snapshot_id: str
     completed_at: datetime
     entries: tuple[SnapshotScheduleEntry, ...]
+
+
+@dataclass(frozen=True)
+class SnapshotEntryLink:
+    """ID занятия и связанной записи источника."""
+
+    entry_id: str
+    kind: str
+    source_id: str
+    name: str | None
+
+
+async def read_snapshot_links(session: AsyncSession, snapshot_id: UUID) -> tuple[SnapshotEntryLink, ...]:
+    """Прочитать связи занятий одного снимка с преподавателями, аудиториями и учебными группами."""
+    query = union_all(
+        select(
+            SnapshotEntryTeacher.entry_id,
+            literal("teacher"),
+            SnapshotEntryTeacher.teacher_id,
+            func.nullif(
+                func.trim(
+                    func.coalesce(ScheduleTeacher.last_name, "")
+                    + " "
+                    + func.coalesce(ScheduleTeacher.first_name, "")
+                    + " "
+                    + func.coalesce(ScheduleTeacher.middle_name, "")
+                ),
+                "",
+            ),
+        )
+        .outerjoin(ScheduleTeacher, ScheduleTeacher.source_id == SnapshotEntryTeacher.teacher_id)
+        .where(SnapshotEntryTeacher.snapshot_id == snapshot_id),
+        select(
+            SnapshotEntryRoom.entry_id,
+            literal("room"),
+            SnapshotEntryRoom.room_id,
+            func.coalesce(ScheduleRoom.title, ScheduleRoom.number),
+        )
+        .outerjoin(ScheduleRoom, ScheduleRoom.source_id == SnapshotEntryRoom.room_id)
+        .where(SnapshotEntryRoom.snapshot_id == snapshot_id),
+        select(
+            SnapshotEntryStudyGroup.entry_id,
+            literal("study_group"),
+            SnapshotEntryStudyGroup.study_group_id,
+            literal(None),
+        ).where(SnapshotEntryStudyGroup.snapshot_id == snapshot_id),
+        select(
+            SnapshotEntryDiscipline.entry_id,
+            literal("discipline"),
+            SnapshotEntryDiscipline.discipline_id,
+            ScheduleDiscipline.title,
+        )
+        .outerjoin(ScheduleDiscipline, ScheduleDiscipline.source_id == SnapshotEntryDiscipline.discipline_id)
+        .where(SnapshotEntryDiscipline.snapshot_id == snapshot_id),
+    )
+    rows = (await session.execute(query)).all()
+    return tuple(
+        SnapshotEntryLink(entry_id=row[0], kind=row[1], source_id=row[2], name=row[3]) for row in rows
+    )
 
 
 async def read_schedule_snapshot(

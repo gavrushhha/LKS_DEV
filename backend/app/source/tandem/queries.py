@@ -6,7 +6,19 @@
 
 _BASE = """
 SELECT e.id, e.date_p, b.number_p AS bellentrynumber_p, e.starttime_p, e.endtime_p,
-       e.activity_p, e.place_p, e.pps_p, e.students_p, e.sysupdatedate_p
+       e.activity_p, e.place_p, e.pps_p, e.students_p, e.sysupdatedate_p,
+       ARRAY(SELECT DISTINCT p.pps_id FROM ttevent2pps_t p
+             WHERE p.event_id = e.id AND p.pps_id IS NOT NULL ORDER BY p.pps_id) AS teacher_ids,
+       ARRAY(SELECT DISTINCT p.place_id FROM ttevent2place_t p
+             WHERE p.event_id = e.id AND p.place_id IS NOT NULL ORDER BY p.place_id) AS room_ids,
+       ARRAY(SELECT DISTINCT g.realedugroup_id FROM ttevent2realedugroup_t g
+             WHERE g.event_id = e.id AND g.realedugroup_id IS NOT NULL
+             ORDER BY g.realedugroup_id) AS study_group_ids,
+       ARRAY(SELECT DISTINCT d.id FROM ttevent2realedugroup_t eg
+             JOIN epp_real_edu_group_t g ON g.id = eg.realedugroup_id
+             JOIN epp_reg_element_part_t part ON part.id = g.activitypart_id
+             JOIN epp_reg_discipline_t d ON d.id = part.registryelement_id
+             WHERE eg.event_id = e.id ORDER BY d.id) AS discipline_ids
 FROM ttevent_t e
 LEFT JOIN sc_bell_entry b ON b.id = e.bellentry_id
 JOIN timetableversion_t v ON v.id = e.timetableversion_id

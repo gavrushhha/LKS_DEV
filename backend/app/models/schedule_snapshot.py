@@ -76,3 +76,67 @@ class ActiveScheduleSnapshot(Base):
 
     scope: Mapped[str] = mapped_column(String(255), primary_key=True)
     snapshot_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+
+
+class SnapshotEntryTeacher(Base):
+    """Связь занятия снимка с ID роли преподавателя в Тандеме."""
+
+    __tablename__ = "snapshot_entry_teacher"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["snapshot_id", "entry_id"],
+            ["snapshot_schedule_entry.snapshot_id", "snapshot_schedule_entry.source_id"],
+            ondelete="CASCADE",
+        ),
+    )
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    entry_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    teacher_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+
+
+class SnapshotEntryRoom(Base):
+    """Связь занятия снимка с ID помещения в Тандеме."""
+
+    __tablename__ = "snapshot_entry_room"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["snapshot_id", "entry_id"],
+            ["snapshot_schedule_entry.snapshot_id", "snapshot_schedule_entry.source_id"],
+            ondelete="CASCADE",
+        ),
+    )
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    entry_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    room_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+
+
+class SnapshotEntryStudyGroup(Base):
+    """Связь занятия с учебной группой Тандема; это не академическая группа."""
+
+    __tablename__ = "snapshot_entry_study_group"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["snapshot_id", "entry_id"],
+            ["snapshot_schedule_entry.snapshot_id", "snapshot_schedule_entry.source_id"],
+            ondelete="CASCADE",
+        ),
+    )
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    entry_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    study_group_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+
+
+class SnapshotEntryDiscipline(Base):
+    """Связь занятия снимка с дисциплиной реестра источника."""
+
+    __tablename__ = "snapshot_entry_discipline"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["snapshot_id", "entry_id"],
+            ["snapshot_schedule_entry.snapshot_id", "snapshot_schedule_entry.source_id"],
+            ondelete="CASCADE",
+        ),
+    )
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    entry_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    discipline_id: Mapped[str] = mapped_column(String(64), primary_key=True)

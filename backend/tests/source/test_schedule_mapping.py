@@ -7,6 +7,7 @@ import pytest
 from app.source.tandem.mapping import (
     SCHEDULE_COLUMNS,
     map_schedule_core,
+    map_schedule_links,
     minutes_to_time,
     unresolved_schedule_fields,
 )
@@ -15,11 +16,32 @@ from app.source.tandem.mapping import (
 def test_unresolved_fields_are_explicit():
     assert set(unresolved_schedule_fields()) == {
         "week_parity",
+        "lesson_type",
         "subgroup",
         "is_cancelled",
         "cancellation_reason",
     }
     assert len({column.api_field for column in SCHEDULE_COLUMNS}) == len(SCHEDULE_COLUMNS)
+
+
+def test_schedule_links_preserve_ids_and_reject_invalid_values():
+    assert map_schedule_links(
+        {"teacher_ids": [123], "room_ids": [456, 789], "study_group_ids": [10], "discipline_ids": [11]}
+    ) == (
+        ("teacher", "123"),
+        ("room", "456"),
+        ("room", "789"),
+        ("study_group", "10"),
+        ("discipline", "11"),
+    )
+    with pytest.raises(ValueError):
+        map_schedule_links(
+            {"teacher_ids": [1, 1], "room_ids": [], "study_group_ids": [], "discipline_ids": []}
+        )
+    with pytest.raises(ValueError):
+        map_schedule_links(
+            {"teacher_ids": [], "room_ids": [True], "study_group_ids": [], "discipline_ids": []}
+        )
 
 
 @pytest.mark.parametrize(

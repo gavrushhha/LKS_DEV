@@ -8,8 +8,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
-from app.models.schedule_snapshot import ActiveScheduleSnapshot, ScheduleSnapshot, SnapshotScheduleEntry
-from app.source.tandem.mapping import map_schedule_core
+from app.models.schedule_snapshot import (
+    ActiveScheduleSnapshot,
+    ScheduleSnapshot,
+    SnapshotEntryDiscipline,
+    SnapshotEntryRoom,
+    SnapshotEntryStudyGroup,
+    SnapshotEntryTeacher,
+    SnapshotScheduleEntry,
+)
+from app.source.tandem.mapping import map_schedule_core, map_schedule_links
 from app.source.tandem.schedule_reader import FilterKind, TandemScheduleReader
 
 _LIMIT = 200
@@ -19,7 +27,12 @@ class IncompleteSnapshotError(ValueError):
     """Объём ответа не позволяет доказать полноту снимка."""
 
 
-def _write_snapshot(session: Session, scope: str, entries: list[SnapshotScheduleEntry]) -> str:
+def _write_snapshot(
+    session: Session,
+    scope: str,
+    entries: list[SnapshotScheduleEntry],
+    links: list[tuple[str, str, str]] | None = None,
+) -> str:
     """Записать снимок и переключить указатель внутри транзакции вызывающего кода."""
     snapshot_id = uuid4()
     now = datetime.now(UTC)
@@ -28,6 +41,24 @@ def _write_snapshot(session: Session, scope: str, entries: list[SnapshotSchedule
     for entry in entries:
         entry.snapshot_id = snapshot_id
     session.add_all(entries)
+    session.flush()
+    for entry_id, kind, related_id in links or []:
+        if kind == "teacher":
+            session.add(
+                SnapshotEntryTeacher(snapshot_id=snapshot_id, entry_id=entry_id, teacher_id=related_id)
+            )
+        elif kind == "room":
+            session.add(SnapshotEntryRoom(snapshot_id=snapshot_id, entry_id=entry_id, room_id=related_id))
+        elif kind == "study_group":
+            session.add(
+                SnapshotEntryStudyGroup(snapshot_id=snapshot_id, entry_id=entry_id, study_group_id=related_id)
+            )
+        elif kind == "discipline":
+            session.add(
+                SnapshotEntryDiscipline(snapshot_id=snapshot_id, entry_id=entry_id, discipline_id=related_id)
+            )
+        else:
+            raise ValueError("Неизвестный тип связи занятия")
     session.flush()
     snapshot = session.get(ScheduleSnapshot, snapshot_id)
     assert snapshot is not None
@@ -84,6 +115,9 @@ async def sync_schedule_snapshot(
         raise ValueError("Источник вернул занятие за пределами запрошенного периода")
     if len({entry.source_id for entry in entries}) != len(entries):
         raise ValueError("Источник вернул повторяющийся идентификатор занятия")
+    links: list[tuple[str, str, str]] = []
+    for entry, row in zip(entries, rows, strict=True):
+        links.extend((entry.source_id, kind, related_id) for kind, related_id in map_schedule_links(row))
     scope = f"{kind}:{source_id}:{date_from.isoformat()}:{date_to.isoformat()}"
     async with session.begin():
-        return await session.run_sync(_write_snapshot, scope, entries)
+        return await session.run_sync(_write_snapshot, scope, entries, links)

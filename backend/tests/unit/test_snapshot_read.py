@@ -7,8 +7,17 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.models.schedule_snapshot import ActiveScheduleSnapshot, ScheduleSnapshot, SnapshotScheduleEntry
-from app.services.snapshot_read import read_schedule_snapshot
+from app.models.schedule_dictionary import ScheduleDiscipline, ScheduleRoom, ScheduleTeacher
+from app.models.schedule_snapshot import (
+    ActiveScheduleSnapshot,
+    ScheduleSnapshot,
+    SnapshotEntryDiscipline,
+    SnapshotEntryRoom,
+    SnapshotEntryStudyGroup,
+    SnapshotEntryTeacher,
+    SnapshotScheduleEntry,
+)
+from app.services.snapshot_read import read_schedule_snapshot, read_snapshot_links
 
 
 @pytest.fixture
@@ -17,6 +26,13 @@ def db():
     for table in (
         ScheduleSnapshot.__table__,
         SnapshotScheduleEntry.__table__,
+        SnapshotEntryTeacher.__table__,
+        SnapshotEntryRoom.__table__,
+        SnapshotEntryStudyGroup.__table__,
+        SnapshotEntryDiscipline.__table__,
+        ScheduleTeacher.__table__,
+        ScheduleRoom.__table__,
+        ScheduleDiscipline.__table__,
         ActiveScheduleSnapshot.__table__,
     ):
         table.create(engine)
@@ -70,3 +86,33 @@ async def test_only_ready_active_snapshot_is_returned(db):
     db.commit()
     result = await read(db)
     assert result is not None and [entry.source_id for entry in result.entries] == ["123"]
+
+
+async def test_read_links_returns_only_selected_snapshot(db):
+    first, second = uuid4(), uuid4()
+    db.add_all(
+        [
+            ScheduleTeacher(source_id="10", last_name="Иванов", first_name="Иван"),
+            ScheduleRoom(source_id="20", number="101"),
+            ScheduleDiscipline(source_id="50", title="Математика"),
+            SnapshotEntryTeacher(snapshot_id=first, entry_id="1", teacher_id="10"),
+            SnapshotEntryRoom(snapshot_id=first, entry_id="1", room_id="20"),
+            SnapshotEntryStudyGroup(snapshot_id=first, entry_id="1", study_group_id="30"),
+            SnapshotEntryDiscipline(snapshot_id=first, entry_id="1", discipline_id="50"),
+            SnapshotEntryRoom(snapshot_id=second, entry_id="2", room_id="40"),
+        ]
+    )
+    db.commit()
+    links = await read_snapshot_links(SessionAdapter(db), first)
+    assert {(link.entry_id, link.kind, link.source_id) for link in links} == {
+        ("1", "teacher", "10"),
+        ("1", "room", "20"),
+        ("1", "study_group", "30"),
+        ("1", "discipline", "50"),
+    }
+    assert {link.kind: link.name for link in links} == {
+        "teacher": "Иванов Иван",
+        "room": "101",
+        "study_group": None,
+        "discipline": "Математика",
+    }
