@@ -1,3 +1,5 @@
+"""Тесты модуля snapshot_sync."""
+
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from unittest.mock import AsyncMock

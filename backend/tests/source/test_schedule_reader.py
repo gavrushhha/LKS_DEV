@@ -1,3 +1,5 @@
+"""Тесты модуля schedule_reader."""
+
 from datetime import date, timedelta
 from unittest.mock import AsyncMock
 

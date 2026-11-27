@@ -1,3 +1,5 @@
+"""Тесты модуля tandem_lifespan."""
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest

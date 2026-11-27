@@ -1,3 +1,5 @@
+"""Тесты модуля nsi_endpoint."""
+
 import pytest
 from pydantic import SecretStr
 

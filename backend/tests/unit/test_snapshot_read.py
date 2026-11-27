@@ -1,3 +1,5 @@
+"""Тесты модуля snapshot_read."""
+
 from datetime import UTC, date, datetime
 from uuid import uuid4
 

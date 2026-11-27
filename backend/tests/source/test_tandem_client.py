@@ -1,3 +1,5 @@
+"""Тесты модуля tandem_client."""
+
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
 

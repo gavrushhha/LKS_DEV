@@ -1,3 +1,5 @@
+"""Тесты модуля dictionary_reader."""
+
 from unittest.mock import AsyncMock
 
 import pytest
