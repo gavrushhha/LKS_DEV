@@ -2,6 +2,8 @@
 
 from httpx import AsyncClient
 
+from app.api.v1 import system
+
 
 async def test_health(client: AsyncClient) -> None:
     response = await client.get("/health")
@@ -10,11 +12,10 @@ async def test_health(client: AsyncClient) -> None:
 
 
 async def test_ready_returns_checks(client: AsyncClient, monkeypatch) -> None:
-    async def ok() -> None:
+    async def ok(request) -> None:
         pass
 
-    monkeypatch.setattr("app.api.v1.system.check_database", ok)
-    monkeypatch.setattr("app.api.v1.system.check_redis", ok)
-    response = await client.get("/api/v1/ready")
+    monkeypatch.setattr(system, "CHECKS", {"lks_db": ok, "redis": ok})
+    response = await client.get("/ready")
     assert response.status_code == 200
     assert "checks" in response.json()

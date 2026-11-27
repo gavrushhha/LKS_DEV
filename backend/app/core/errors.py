@@ -35,6 +35,7 @@ def problem_response(
     detail: str | None = None,
     errors: list[dict[str, Any]] | None = None,
     trace_id: str | None = None,
+    checks: dict[str, str] | None = None,
 ) -> JSONResponse:
     payload: dict[str, Any] = {
         "type": f"https://api.lks.local/errors/{code.replace('_', '-')}",
@@ -44,6 +45,8 @@ def problem_response(
     }
     if trace_id:
         payload["trace_id"] = trace_id
+    if checks is not None:
+        payload["checks"] = checks
     if detail:
         payload["detail"] = detail
     if errors:
@@ -55,13 +58,31 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(ApiError)
     async def _api_error(request: Request, exc: ApiError) -> JSONResponse:
         return problem_response(
-            exc.status_code, exc.code, exc.title, exc.detail, exc.errors, trace_id=request.state.trace_id
+            exc.status_code,
+            exc.code,
+            exc.title,
+            exc.detail,
+            exc.errors,
+            trace_id=getattr(request.state, "trace_id", None),
         )
 
     @app.exception_handler(StarletteHTTPException)
     async def _http_error(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+        problems = {
+            400: ("bad_request", "Неверный запрос"),
+            401: ("unauthorized", "Требуется аутентификация"),
+            403: ("forbidden", "Доступ запрещён"),
+            404: ("not_found", "Ресурс не найден"),
+            405: ("method_not_allowed", "Метод не разрешён"),
+            429: ("too_many_requests", "Слишком много запросов"),
+        }
+        code, title = problems.get(exc.status_code, ("http_error", "Ошибка запроса"))
         response = problem_response(
-            exc.status_code, "http_error", str(exc.detail), trace_id=request.state.trace_id
+            exc.status_code,
+            code,
+            title,
+            detail=str(exc.detail),
+            trace_id=getattr(request.state, "trace_id", None),
         )
         if exc.headers:
             response.headers.update(exc.headers)
@@ -74,7 +95,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             "not_implemented",
             "Операция ещё не реализована",
             detail=str(exc) or None,
-            trace_id=request.state.trace_id,
+            trace_id=getattr(request.state, "trace_id", None),
         )
 
     @app.exception_handler(RequestValidationError)
@@ -83,7 +104,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             status.HTTP_400_BAD_REQUEST,
             "validation_error",
             "Ошибка валидации",
-            trace_id=request.state.trace_id,
+            trace_id=getattr(request.state, "trace_id", None),
             errors=[
                 {"field": ".".join(str(p) for p in e["loc"]), "message": e["msg"], "code": e["type"]}
                 for e in exc.errors()

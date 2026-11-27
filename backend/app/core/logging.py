@@ -12,7 +12,8 @@ def get_logger(name: str) -> structlog.stdlib.BoundLogger:
 
 
 def configure_logging(level: str = "INFO") -> None:
-    logging.basicConfig(format="%(message)s", stream=sys.stdout, level=level)
+    numeric_level = logging.getLevelNamesMapping().get(level.upper(), logging.INFO)
+    logging.basicConfig(format="%(message)s", stream=sys.stdout, level=numeric_level, force=True)
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,
@@ -22,6 +23,6 @@ def configure_logging(level: str = "INFO") -> None:
             structlog.processors.format_exc_info,
             structlog.processors.JSONRenderer(ensure_ascii=False),
         ],
-        wrapper_class=structlog.make_filtering_bound_logger(logging.getLevelName(level)),
+        wrapper_class=structlog.make_filtering_bound_logger(numeric_level),
         cache_logger_on_first_use=True,
     )
