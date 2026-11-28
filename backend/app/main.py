@@ -4,6 +4,7 @@ import asyncio
 import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 from uuid import uuid4
 
 import structlog
@@ -30,6 +31,14 @@ class HealthResponse(BaseModel):
     version: str
 
 
+class LKSApp(FastAPI):
+    def openapi(self) -> dict[str, Any]:
+        schema = super().openapi()
+        # Успешный ответ /ready возвращается как JSONResponse, несмотря на класс ошибки маршрута.
+        schema["paths"]["/ready"]["get"]["responses"]["200"]["content"].pop("application/problem+json", None)
+        return schema
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("app_started", env=settings.app_env, tandem_mode=settings.tandem_mode)
@@ -51,7 +60,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("app_stopped")
 
 
-app = FastAPI(
+app = LKSApp(
     title="ЛКС — Расписание и Журнал",
     version=__version__,
     description=("Витрина расписания над БД «Тандем.Университет» (только чтение) и журнал успеваемости ЛКС."),

@@ -53,6 +53,7 @@ def test_generated_system_schemas_match_contract() -> None:
         expected = contract["paths"][path]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
         generated = actual["paths"][path]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
         assert_schema_matches(expected, generated, actual["components"]["schemas"])
+    assert set(actual["paths"]["/ready"]["get"]["responses"]["200"]["content"]) == {"application/json"}
     assert "503" in actual["paths"]["/ready"]["get"]["responses"]
     assert set(actual["paths"]["/ready"]["get"]["responses"]["503"]["content"]) == {
         "application/problem+json"
