@@ -9,6 +9,7 @@ from app import __version__
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.errors import register_exception_handlers
+from app.core.lks_db import lks_engine
 from app.core.logging import configure_logging, get_logger
 
 logger = get_logger(__name__)
@@ -19,8 +20,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     logger.info("app_started", env=settings.app_env, tandem_mode=settings.tandem_mode)
     # TODO(T3.3): инициализация пула Redis и подключения к источнику расписания
-    yield
-    logger.info("app_stopped")
+    try:
+        yield
+    finally:
+        await lks_engine.dispose()
+        logger.info("app_stopped")
 
 
 app = FastAPI(
