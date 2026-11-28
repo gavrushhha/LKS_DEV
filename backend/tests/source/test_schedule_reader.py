@@ -86,6 +86,7 @@ async def test_fetch_mapped_preserves_all_links_and_unknown_fields():
         "endtime_p": 750,
         "sysupdatedate_p": None,
         "lesson_type_codes": ["6"],
+        "week_alternation_codes": ["2"],
         "activity_p": None,
         "pps_p": None,
         "students_p": None,
@@ -93,6 +94,7 @@ async def test_fetch_mapped_preserves_all_links_and_unknown_fields():
         "teacher_ids": [11, 12],
         "room_ids": [21],
         "study_group_ids": [31],
+        "academic_group_ids": [51, 52],
         "discipline_ids": [41],
     }
     client.fetch.side_effect = [
@@ -101,6 +103,7 @@ async def test_fetch_mapped_preserves_all_links_and_unknown_fields():
             {"kind": "teacher", "source_id": 11, "name": "Преподаватель"},
             {"kind": "room", "source_id": 21, "name": "101"},
             {"kind": "study_group", "source_id": 31, "name": "Поток"},
+            {"kind": "academic_group", "source_id": 51, "name": "Группа"},
             {"kind": "discipline", "source_id": 41, "name": "Дисциплина"},
         ],
     ]
@@ -109,12 +112,14 @@ async def test_fetch_mapped_preserves_all_links_and_unknown_fields():
     )
     item = result[0]
     assert item.core.pair_number is None and item.core.lesson_type == "other"
-    assert item.week_parity is None and item.is_cancelled is None and item.subgroup is None
+    assert item.week_parity == "odd" and item.is_cancelled is False and item.subgroup is None
     assert {(x.kind, x.source_id, x.name) for x in item.references} == {
         ("teacher", "11", "Преподаватель"),
         ("teacher", "12", None),
         ("room", "21", "101"),
         ("study_group", "31", "Поток"),
+        ("academic_group", "51", "Группа"),
+        ("academic_group", "52", None),
         ("discipline", "41", "Дисциплина"),
     }
     assert client.fetch.await_args_list[1].args == (
@@ -123,6 +128,7 @@ async def test_fetch_mapped_preserves_all_links_and_unknown_fields():
         [21],
         [31],
         [41],
+        [51, 52],
     )
 
 
@@ -135,3 +141,24 @@ async def test_fetch_mapped_empty_result_uses_one_query():
         == []
     )
     assert client.fetch.await_count == 1
+
+
+async def test_historical_groups_reads_ids_for_event_and_date():
+    """Передать дату занятия и сохранить все группы из результата."""
+    client = AsyncMock(spec=TandemClient)
+    client.fetch.return_value = [{"group_id": 12}, {"group_id": 34}]
+    event_date = date(2026, 12, 7)
+    result = await TandemScheduleReader(client).fetch_historical_group_ids(42, event_date)
+    assert result == ("12", "34")
+    client.fetch.assert_awaited_once_with(queries.HISTORICAL_EVENT_GROUPS, 42, event_date)
+
+
+async def test_historical_groups_rejects_invalid_request_before_query():
+    """Не запрашивать источник при ошибочных параметрах."""
+    client = AsyncMock(spec=TandemClient)
+    reader = TandemScheduleReader(client)
+    with pytest.raises(ValueError):
+        await reader.fetch_historical_group_ids(True, date(2026, 12, 7))
+    with pytest.raises(ValueError):
+        await reader.fetch_historical_group_ids(42, None)
+    client.fetch.assert_not_awaited()

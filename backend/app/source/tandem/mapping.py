@@ -26,7 +26,13 @@ SCHEDULE_COLUMNS: tuple[ColumnMap, ...] = (
     ColumnMap("sc_bell_entry", "number_p", "pair_number", "связь через bellentry_id"),
     ColumnMap("ttevent_t", "starttime_p", "starts_at", "минуты от полуночи; сверено на примере"),
     ColumnMap("ttevent_t", "endtime_p", "ends_at", "минуты от полуночи; сверено на примере"),
-    ColumnMap(None, None, "week_parity", "способ определения не подтверждён"),
+    ColumnMap(
+        "epp_c_week_alternation_t",
+        "code_p",
+        "week_parity",
+        "чередование календарной недели по дате; периодичность занятия не определена",
+        False,
+    ),
     ColumnMap(
         "epp_group_type_t",
         "code_p",
@@ -63,13 +69,30 @@ SCHEDULE_COLUMNS: tuple[ColumnMap, ...] = (
         "учебная группа, не академическая",
     ),
     ColumnMap(
+        "stud_prop_history_element_t",
+        "grouplink_id",
+        "group.source_ids",
+        "академические группы на дату занятия по истории и статусам студентов",
+    ),
+    ColumnMap(
         "epp_reg_element_part_t",
         "registryelement_id",
         "discipline.source_ids",
         "через учебную группу и epp_reg_discipline_t; проверено на одной группе",
     ),
-    ColumnMap(None, None, "subgroup", "источник не подтверждён"),
-    ColumnMap(None, None, "is_cancelled", "признак отмены не подтверждён"),
+    ColumnMap(
+        "epp_real_edu_group_t",
+        "title_p",
+        "subgroup",
+        "название потока доступно в study_group; отдельный номер подгруппы не подтверждён",
+        False,
+    ),
+    ColumnMap(
+        "ttevent_t",
+        "id",
+        "is_cancelled",
+        "по правилу проекта отменённое занятие удаляется из актуального расписания",
+    ),
     ColumnMap(None, None, "cancellation_reason", "источник не подтверждён"),
     ColumnMap(None, None, "source.system", "константа приложения"),
     ColumnMap(
@@ -124,6 +147,19 @@ def map_lesson_type(codes: list[str] | None) -> str | None:
     return mapped[0]
 
 
+def map_week_parity(codes: list[str] | None) -> str | None:
+    """Преобразовать код чередования календарной недели Тандема."""
+    if codes is None or codes == []:
+        return None
+    if not isinstance(codes, list) or any(not isinstance(code, str) for code in codes):
+        raise ValueError("Некорректные коды чередования недель")
+    mapped = {"1": "even", "2": "odd"}
+    values = {mapped.get(code) for code in codes}
+    if None in values or len(values) != 1:
+        return None
+    return next(iter(values))
+
+
 def map_schedule_links(row: Mapping[str, Any]) -> tuple[tuple[str, str], ...]:
     """Преобразовать проверенные ID преподавателей и аудиторий в строки."""
     links: list[tuple[str, str]] = []
@@ -142,6 +178,18 @@ def map_schedule_links(row: Mapping[str, Any]) -> tuple[tuple[str, str], ...]:
             raise ValueError("Повторяющиеся связи занятия")
         links.extend((kind, str(value)) for value in values)
     return tuple(links)
+
+
+def map_academic_group_links(row: Mapping[str, Any]) -> tuple[tuple[str, str], ...]:
+    """Проверить и преобразовать идентификаторы академических групп занятия."""
+    values = row["academic_group_ids"]
+    if not isinstance(values, list) or any(
+        isinstance(value, bool) or not isinstance(value, int) or not 0 < value < 2**63 for value in values
+    ):
+        raise ValueError("Некорректные идентификаторы академических групп")
+    if len(set(values)) != len(values):
+        raise ValueError("Повторяющиеся академические группы занятия")
+    return tuple(("academic_group", str(value)) for value in values)
 
 
 @dataclass(frozen=True)
@@ -195,12 +243,14 @@ def map_schedule_projection(
         core=map_schedule_core(row, fetched_at),
         references=tuple(
             ScheduleReference(kind=kind, source_id=source_id, name=names.get((kind, source_id)))
-            for kind, source_id in map_schedule_links(row)
+            for kind, source_id in (*map_schedule_links(row), *map_academic_group_links(row))
         ),
         activity_text=texts[0],
         teachers_text=texts[1],
         groups_text=texts[2],
         place_text=texts[3],
+        week_parity=map_week_parity(row.get("week_alternation_codes")),
+        is_cancelled=False,
     )
 
 

@@ -10,6 +10,7 @@ from app.source.tandem.client import TandemClient
 from app.source.tandem.mapping import (
     ScheduleCore,
     ScheduleProjection,
+    map_academic_group_links,
     map_schedule_core,
     map_schedule_links,
     map_schedule_projection,
@@ -31,7 +32,12 @@ class TandemScheduleReader:
         self._client = client
 
     async def fetch(
-        self, kind: FilterKind, source_id: int, date_from: date, date_to: date, limit: int = 50
+        self,
+        kind: FilterKind,
+        source_id: int,
+        date_from: date,
+        date_to: date,
+        limit: int = 50,
     ) -> list[dict[str, Any]]:
         """Получить ограниченный набор строк с одним фильтром и периодом."""
         if kind not in _QUERIES:
@@ -45,29 +51,52 @@ class TandemScheduleReader:
         return await self._client.fetch(_QUERIES[kind], source_id, date_from, date_to, limit)
 
     async def fetch_core(
-        self, kind: FilterKind, source_id: int, date_from: date, date_to: date, limit: int = 50
+        self,
+        kind: FilterKind,
+        source_id: int,
+        date_from: date,
+        date_to: date,
+        limit: int = 50,
     ) -> list[ScheduleCore]:
         """Получить и преобразовать подтверждённые поля после чтения источника."""
         rows = await self.fetch(kind, source_id, date_from, date_to, limit)
         fetched_at = datetime.now(UTC)
         return [map_schedule_core(row, fetched_at) for row in rows]
 
+    async def fetch_historical_group_ids(self, event_id: int, event_date: date) -> tuple[str, ...]:
+        """Получить академические группы по истории на дату занятия."""
+        if isinstance(event_id, bool) or not isinstance(event_id, int) or not 0 < event_id < 2**63:
+            raise ValueError("Некорректный идентификатор занятия")
+        if not isinstance(event_date, date) or isinstance(event_date, datetime):
+            raise ValueError("Некорректная дата занятия")
+        rows = await self._client.fetch(queries.HISTORICAL_EVENT_GROUPS, event_id, event_date)
+        groups = [row["group_id"] for row in rows]
+        return tuple(group_id for _, group_id in map_academic_group_links({"academic_group_ids": groups}))
+
     async def fetch_mapped(
-        self, kind: FilterKind, source_id: int, date_from: date, date_to: date, limit: int = 50
+        self,
+        kind: FilterKind,
+        source_id: int,
+        date_from: date,
+        date_to: date,
+        limit: int = 50,
     ) -> list[ScheduleProjection]:
         """Получить занятия и названия связанных объектов одним дополнительным запросом."""
         rows = await self.fetch(kind, source_id, date_from, date_to, limit)
         groups: dict[str, set[int]] = {
-            name: set() for name in ("teacher", "room", "study_group", "discipline")
+            name: set() for name in ("teacher", "room", "study_group", "discipline", "academic_group")
         }
         for row in rows:
-            for link_kind, link_id in map_schedule_links(row):
+            for link_kind, link_id in (*map_schedule_links(row), *map_academic_group_links(row)):
                 groups[link_kind].add(int(link_id))
         names: dict[tuple[str, str], str | None] = {}
         if any(groups.values()):
             records = await self._client.fetch(
                 queries.SCHEDULE_REFERENCE_NAMES,
-                *(sorted(groups[name]) for name in ("teacher", "room", "study_group", "discipline")),
+                *(
+                    sorted(groups[name])
+                    for name in ("teacher", "room", "study_group", "discipline", "academic_group")
+                ),
             )
             for record in records:
                 link_kind = record["kind"]

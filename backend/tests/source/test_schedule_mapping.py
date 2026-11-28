@@ -7,9 +7,11 @@ import pytest
 from app.schemas.schedule import ScheduleEntry
 from app.source.tandem.mapping import (
     SCHEDULE_COLUMNS,
+    map_academic_group_links,
     map_lesson_type,
     map_schedule_core,
     map_schedule_links,
+    map_week_parity,
     minutes_to_time,
     unresolved_schedule_fields,
 )
@@ -24,7 +26,6 @@ def test_unresolved_fields_are_explicit():
         "teacher",
         "room",
         "subgroup",
-        "is_cancelled",
         "cancellation_reason",
     }
     assert len({column.api_field for column in SCHEDULE_COLUMNS}) == len(SCHEDULE_COLUMNS)
@@ -160,3 +161,23 @@ def test_map_schedule_core_rejects_invalid_pair(pair):
     }
     with pytest.raises(ValueError, match="номер пары"):
         map_schedule_core(row, datetime.now(UTC))
+
+
+def test_academic_groups_preserve_all_source_ids_and_reject_duplicates():
+    """Сохранить группы занятия и отклонить некорректные связи."""
+    assert map_academic_group_links({"academic_group_ids": [11, 12]}) == (
+        ("academic_group", "11"),
+        ("academic_group", "12"),
+    )
+    for values in ([11, 11], [True], [0], ["11"], None):
+        with pytest.raises(ValueError):
+            map_academic_group_links({"academic_group_ids": values})
+
+
+@pytest.mark.parametrize(
+    ("codes", "expected"),
+    [(["1"], "even"), (["2"], "odd"), ([], None), (None, None), (["1", "2"], None), (["3"], None)],
+)
+def test_week_parity_uses_actual_tandem_codes(codes, expected):
+    """Сопоставить известные значения и не угадывать неизвестные."""
+    assert map_week_parity(codes) == expected
