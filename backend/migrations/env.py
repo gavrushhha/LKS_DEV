@@ -12,7 +12,7 @@ from app.models.base import Base
 from app.models import journal  # noqa: F401  — регистрация моделей
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.lks_db_dsn)
+config.set_main_option("sqlalchemy.url", settings.lks_db_dsn.get_secret_value())
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -22,7 +22,7 @@ target_metadata = Base.metadata
 
 def run_migrations_offline() -> None:
     context.configure(
-        url=settings.lks_db_dsn,
+        url=settings.lks_db_dsn.get_secret_value(),
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},

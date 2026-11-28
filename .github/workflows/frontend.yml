@@ -1,0 +1,47 @@
+name: Frontend CI
+
+on:
+  push:
+    paths:
+      - "**/*.dart"
+      - ".github/workflows/**"
+  pull_request:
+    paths:
+      - "**/*.dart"
+      - ".github/workflows/**"
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check frontend project
+        id: project
+        shell: bash
+        run: |
+          if test -f frontend/pubspec.yaml; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          elif git ls-files '*.dart' | grep -q .; then
+            echo "::error::Dart files exist, but frontend/pubspec.yaml is missing."
+            exit 1
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Frontend project is not yet present; checks were not run."
+          fi
+      - uses: subosito/flutter-action@v2
+        if: steps.project.outputs.available == 'true'
+        with:
+          channel: stable
+          cache: true
+      - name: Install dependencies
+        if: steps.project.outputs.available == 'true'
+        working-directory: frontend
+        run: flutter pub get
+      - name: Analyze Dart
+        if: steps.project.outputs.available == 'true'
+        working-directory: frontend
+        run: flutter analyze
+      - name: Test frontend
+        if: steps.project.outputs.available == 'true' && hashFiles('frontend/test/**') != ''
+        working-directory: frontend
+        run: flutter test

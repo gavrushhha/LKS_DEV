@@ -22,14 +22,34 @@ services:
       timeout: 3s
       retries: 10
 
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: lks
+      RABBITMQ_DEFAULT_PASS: lks
+    ports: ["127.0.0.1:5672:5672", "127.0.0.1:15672:15672"]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   api:
     build: ./backend
-    env_file: [.env]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      LKS_DB_DSN: postgresql+asyncpg://lks:lks@postgres:5432/lks
+      REDIS_DSN: redis://redis:6379/0
+      RABBITMQ_DSN: amqp://lks:lks@rabbitmq:5672/
     ports: ["8000:8000"]
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+      rabbitmq: {condition: service_healthy}
+    stop_grace_period: 20s
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 15
 
 volumes:
   pgdata:
