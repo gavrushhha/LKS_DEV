@@ -7,7 +7,13 @@ from typing import Any, Literal
 from app.core.config import settings
 from app.source.tandem import queries
 from app.source.tandem.client import TandemClient
-from app.source.tandem.mapping import ScheduleCore, map_schedule_core
+from app.source.tandem.mapping import (
+    ScheduleCore,
+    ScheduleProjection,
+    map_schedule_core,
+    map_schedule_links,
+    map_schedule_projection,
+)
 
 FilterKind = Literal["group", "teacher", "room", "student"]
 _QUERIES = {
@@ -45,3 +51,35 @@ class TandemScheduleReader:
         rows = await self.fetch(kind, source_id, date_from, date_to, limit)
         fetched_at = datetime.now(UTC)
         return [map_schedule_core(row, fetched_at) for row in rows]
+
+    async def fetch_mapped(
+        self, kind: FilterKind, source_id: int, date_from: date, date_to: date, limit: int = 50
+    ) -> list[ScheduleProjection]:
+        """Получить занятия и названия связанных объектов одним дополнительным запросом."""
+        rows = await self.fetch(kind, source_id, date_from, date_to, limit)
+        groups: dict[str, set[int]] = {
+            name: set() for name in ("teacher", "room", "study_group", "discipline")
+        }
+        for row in rows:
+            for link_kind, link_id in map_schedule_links(row):
+                groups[link_kind].add(int(link_id))
+        names: dict[tuple[str, str], str | None] = {}
+        if any(groups.values()):
+            records = await self._client.fetch(
+                queries.SCHEDULE_REFERENCE_NAMES,
+                *(sorted(groups[name]) for name in ("teacher", "room", "study_group", "discipline")),
+            )
+            for record in records:
+                link_kind = record["kind"]
+                link_id = record["source_id"]
+                name = record["name"]
+                if link_kind not in groups or link_id not in groups[link_kind]:
+                    raise ValueError("Источник вернул постороннюю запись справочника")
+                if name is not None and not isinstance(name, str):
+                    raise ValueError("Некорректное название записи справочника")
+                key = (link_kind, str(link_id))
+                if key in names:
+                    raise ValueError("Источник вернул повторяющуюся запись справочника")
+                names[key] = name
+        fetched_at = datetime.now(UTC)
+        return [map_schedule_projection(row, fetched_at, names) for row in rows]

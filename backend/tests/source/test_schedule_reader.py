@@ -73,3 +73,65 @@ async def test_fetch_core_converts_rows_from_source():
     assert len(result) == 1
     assert (result[0].id, result[0].starts_at, result[0].ends_at) == ("123", "08:45", "10:05")
     assert result[0].fetched_at.utcoffset() == timedelta(0)
+
+
+async def test_fetch_mapped_preserves_all_links_and_unknown_fields():
+    """Проверить пакетное чтение названий и отсутствие выдуманных значений."""
+    client = AsyncMock(spec=TandemClient)
+    source = {
+        "id": 123,
+        "date_p": date(2026, 12, 7),
+        "bellentrynumber_p": None,
+        "starttime_p": 720,
+        "endtime_p": 750,
+        "sysupdatedate_p": None,
+        "lesson_type_codes": ["6"],
+        "activity_p": None,
+        "pps_p": None,
+        "students_p": None,
+        "place_p": None,
+        "teacher_ids": [11, 12],
+        "room_ids": [21],
+        "study_group_ids": [31],
+        "discipline_ids": [41],
+    }
+    client.fetch.side_effect = [
+        [source],
+        [
+            {"kind": "teacher", "source_id": 11, "name": "Преподаватель"},
+            {"kind": "room", "source_id": 21, "name": "101"},
+            {"kind": "study_group", "source_id": 31, "name": "Поток"},
+            {"kind": "discipline", "source_id": 41, "name": "Дисциплина"},
+        ],
+    ]
+    result = await TandemScheduleReader(client).fetch_mapped(
+        "group", 42, date(2026, 12, 7), date(2026, 12, 7)
+    )
+    item = result[0]
+    assert item.core.pair_number is None and item.core.lesson_type == "other"
+    assert item.week_parity is None and item.is_cancelled is None and item.subgroup is None
+    assert {(x.kind, x.source_id, x.name) for x in item.references} == {
+        ("teacher", "11", "Преподаватель"),
+        ("teacher", "12", None),
+        ("room", "21", "101"),
+        ("study_group", "31", "Поток"),
+        ("discipline", "41", "Дисциплина"),
+    }
+    assert client.fetch.await_args_list[1].args == (
+        queries.SCHEDULE_REFERENCE_NAMES,
+        [11, 12],
+        [21],
+        [31],
+        [41],
+    )
+
+
+async def test_fetch_mapped_empty_result_uses_one_query():
+    """Не обращаться к справочникам при отсутствии занятий."""
+    client = AsyncMock(spec=TandemClient)
+    client.fetch.return_value = []
+    assert (
+        await TandemScheduleReader(client).fetch_mapped("group", 42, date(2026, 12, 7), date(2026, 12, 7))
+        == []
+    )
+    assert client.fetch.await_count == 1

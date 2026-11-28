@@ -17,6 +17,7 @@ class ColumnMap:
     source_column: str | None
     api_field: str
     note: str = ""
+    complete: bool = True
 
 
 SCHEDULE_COLUMNS: tuple[ColumnMap, ...] = (
@@ -26,15 +27,33 @@ SCHEDULE_COLUMNS: tuple[ColumnMap, ...] = (
     ColumnMap("ttevent_t", "starttime_p", "starts_at", "минуты от полуночи; сверено на примере"),
     ColumnMap("ttevent_t", "endtime_p", "ends_at", "минуты от полуночи; сверено на примере"),
     ColumnMap(None, None, "week_parity", "способ определения не подтверждён"),
-    ColumnMap(None, None, "lesson_type", "связь и значения не подтверждены"),
     ColumnMap(
-        "ttevent_t", "activity_p", "discipline", "текст; в проверенной выборке NULL; ID не подтверждён"
+        "epp_group_type_t",
+        "code_p",
+        "lesson_type",
+        "не все коды сопоставлены; связь через учебную группу",
+        False,
     ),
     ColumnMap(
-        "ttevent_t", "students_p", "group", "текст; в проверенной выборке NULL; связь с группой отдельно"
+        "ttevent_t",
+        "activity_p",
+        "discipline",
+        "текст может отсутствовать; полная ссылка требует справочника",
+        False,
     ),
-    ColumnMap("ttevent_t", "pps_p", "teacher", "текст; в проверенной выборке NULL"),
-    ColumnMap("ttevent_t", "place_p", "room", "текст; ID помещения получается через ttevent2place_t"),
+    ColumnMap(
+        "ttevent_t", "students_p", "group", "текст может отсутствовать; состав групп требует проверки", False
+    ),
+    ColumnMap(
+        "ttevent_t", "pps_p", "teacher", "текст может отсутствовать; полная ссылка требует справочника", False
+    ),
+    ColumnMap(
+        "ttevent_t",
+        "place_p",
+        "room",
+        "ID получается через ttevent2place_t; полная ссылка не завершена",
+        False,
+    ),
     ColumnMap("ttevent2pps_t", "pps_id", "teacher.source_ids", "связь по event_id; может быть несколько"),
     ColumnMap("ttevent2place_t", "place_id", "room.source_ids", "связь по event_id; может быть несколько"),
     ColumnMap(
@@ -60,24 +79,26 @@ SCHEDULE_COLUMNS: tuple[ColumnMap, ...] = (
 )
 
 LESSON_TYPE_MAP: dict[str, str] = {
-    # TODO(T2.2): заполнить по справочнику видов занятий источника
-    "LECTURE": "lecture",
-    "PRACTICE": "practice",
-    "LAB": "lab",
-    "SEMINAR": "seminar",
-    "EXAM": "exam",
-    "CONSULT": "consultation",
+    "alt.lectures": "lecture",
+    "alt.practice": "practice",
+    "alt.labs": "lab",
+    "alt.seminars": "seminar",
+    "fca.exam": "exam",
+    "fca.setoff": "other",
+    "fca.controlWork": "other",
+    "5": "consultation",
+    "6": "other",
 }
 
 
 def unresolved_schedule_fields() -> tuple[str, ...]:
-    """Получить поля расписания с неподтверждённым источником."""
+    """Получить поля с отсутствующим или неполным маппингом."""
     # source.system и source.fetched_at формируются приложением, а не читаются из БД.
     generated = {"source.system", "source.fetched_at"}
     return tuple(
         column.api_field
         for column in SCHEDULE_COLUMNS
-        if column.source_table is None and column.api_field not in generated
+        if (column.source_table is None or not column.complete) and column.api_field not in generated
     )
 
 
@@ -89,6 +110,18 @@ def minutes_to_time(value: int | None) -> str | None:
         raise ValueError("Время должно быть числом минут от 0 до 1439")
     hours, minutes = divmod(value, 60)
     return f"{hours:02d}:{minutes:02d}"
+
+
+def map_lesson_type(codes: list[str] | None) -> str | None:
+    """Преобразовать однозначный вид занятия из подтверждённых кодов Тандема."""
+    if codes is None or codes == []:
+        return None
+    if not isinstance(codes, list) or any(not isinstance(code, str) for code in codes):
+        raise ValueError("Некорректные коды вида занятия")
+    mapped = [LESSON_TYPE_MAP.get(code) for code in codes]
+    if any(value is None for value in mapped) or len(set(mapped)) != 1:
+        return None
+    return mapped[0]
 
 
 def map_schedule_links(row: Mapping[str, Any]) -> tuple[tuple[str, str], ...]:
@@ -117,11 +150,58 @@ class ScheduleCore:
 
     id: str
     date: date
-    pair_number: int
+    pair_number: int | None
     starts_at: str | None
     ends_at: str | None
     updated_at: datetime | None
     fetched_at: datetime
+    lesson_type: str | None = None
+    source_lesson_type_codes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ScheduleReference:
+    """Ссылка источника с названием, если оно найдено."""
+
+    kind: str
+    source_id: str
+    name: str | None
+
+
+@dataclass(frozen=True)
+class ScheduleProjection:
+    """Данные занятия Тандема без подстановки неизвестных значений."""
+
+    core: ScheduleCore
+    references: tuple[ScheduleReference, ...]
+    activity_text: str | None
+    teachers_text: str | None
+    groups_text: str | None
+    place_text: str | None
+    week_parity: str | None = None
+    subgroup: int | None = None
+    is_cancelled: bool | None = None
+    cancellation_reason: str | None = None
+
+
+def map_schedule_projection(
+    row: Mapping[str, Any], fetched_at: datetime, names: Mapping[tuple[str, str], str | None]
+) -> ScheduleProjection:
+    """Сопоставить поля занятия и все подтверждённые ссылки источника."""
+    texts = [row[key] for key in ("activity_p", "pps_p", "students_p", "place_p")]
+    if any(text is not None and not isinstance(text, str) for text in texts):
+        raise ValueError("Некорректное текстовое поле занятия")
+    return ScheduleProjection(
+        core=map_schedule_core(row, fetched_at),
+        references=tuple(
+            ScheduleReference(kind=kind, source_id=source_id, name=names.get((kind, source_id)))
+            for kind, source_id in map_schedule_links(row)
+        ),
+        activity_text=texts[0],
+        teachers_text=texts[1],
+        groups_text=texts[2],
+        place_text=texts[3],
+    )
 
 
 def map_schedule_core(row: Mapping[str, Any], fetched_at: datetime) -> ScheduleCore:
@@ -134,12 +214,14 @@ def map_schedule_core(row: Mapping[str, Any], fetched_at: datetime) -> ScheduleC
         raise ValueError("Некорректный идентификатор занятия")
     if not isinstance(lesson_date, date) or isinstance(lesson_date, datetime):
         raise ValueError("Некорректная дата занятия")
-    if isinstance(pair, bool) or not isinstance(pair, int) or pair < 1:
-        raise ValueError("Не указан корректный номер пары")
+    if pair is not None and (isinstance(pair, bool) or not isinstance(pair, int) or pair < 1):
+        raise ValueError("Некорректный номер пары")
     if updated_at is not None and not isinstance(updated_at, datetime):
         raise ValueError("Некорректное время обновления источника")
     if fetched_at.tzinfo is None or fetched_at.utcoffset() is None:
         raise ValueError("Время чтения должно содержать часовой пояс")
+    type_codes = row.get("lesson_type_codes")
+    mapped_type = map_lesson_type(type_codes)
     return ScheduleCore(
         id=str(source_id),
         date=lesson_date,
@@ -148,4 +230,6 @@ def map_schedule_core(row: Mapping[str, Any], fetched_at: datetime) -> ScheduleC
         ends_at=minutes_to_time(row["endtime_p"]),
         updated_at=updated_at,
         fetched_at=fetched_at,
+        lesson_type=mapped_type,
+        source_lesson_type_codes=tuple(type_codes) if type_codes is not None else (),
     )

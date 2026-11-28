@@ -16,7 +16,12 @@ SELECT e.id, e.date_p, b.number_p AS bellentrynumber_p, e.starttime_p, e.endtime
              JOIN epp_real_edu_group_t g ON g.id = eg.realedugroup_id
              JOIN epp_reg_element_part_t part ON part.id = g.activitypart_id
              JOIN epp_reg_discipline_t d ON d.id = part.registryelement_id
-             WHERE eg.event_id = e.id ORDER BY d.id) AS discipline_ids
+             WHERE eg.event_id = e.id ORDER BY d.id) AS discipline_ids,
+       ARRAY(SELECT DISTINCT t.code_p FROM ttevent2realedugroup_t eg
+             JOIN epp_real_edu_group_t g ON g.id = eg.realedugroup_id
+             JOIN epp_group_type_t t ON t.id = g.type_id
+             WHERE eg.event_id = e.id AND t.code_p IS NOT NULL
+             ORDER BY t.code_p) AS lesson_type_codes
 FROM ttevent_t e
 LEFT JOIN sc_bell_entry b ON b.id = e.bellentry_id
 JOIN timetableversion_t v ON v.id = e.timetableversion_id
@@ -145,4 +150,24 @@ WHERE strpos(lower(b.title_p), lower($1)) > 0
   AND ($2::bigint IS NULL OR b.id > $2)
 ORDER BY b.id
 LIMIT $3
+"""
+
+SCHEDULE_REFERENCE_NAMES = """
+SELECT 'teacher' AS kind, t.id AS source_id,
+       NULLIF(trim(concat_ws(' ', c.lastname_p, c.firstname_p, c.middlename_p)), '') AS name
+FROM pps_entry_base_t t
+JOIN personrole_t r ON r.id = t.id
+LEFT JOIN person_t p ON p.id = r.person_id
+LEFT JOIN identitycard_t c ON c.id = p.identitycard_id
+WHERE t.id = ANY($1::bigint[])
+UNION ALL
+SELECT 'room', p.id, COALESCE(NULLIF(p.title_p, ''), NULLIF(p.number_p, ''))
+FROM places_place p WHERE p.id = ANY($2::bigint[])
+UNION ALL
+SELECT 'study_group', g.id, NULLIF(g.title_p, '')
+FROM epp_real_edu_group_t g WHERE g.id = ANY($3::bigint[])
+UNION ALL
+SELECT 'discipline', b.id, NULLIF(b.title_p, '')
+FROM epp_reg_base_t b JOIN epp_reg_discipline_t d ON d.id = b.id
+WHERE b.id = ANY($4::bigint[])
 """

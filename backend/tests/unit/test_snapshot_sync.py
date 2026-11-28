@@ -124,6 +124,12 @@ def test_null_text_fields_from_tandem_are_preserved():
     assert (entry.activity, entry.teachers, entry.groups, entry.place) == (None, None, None, "101")
 
 
+def test_event_without_bell_keeps_missing_pair():
+    """Сохранить отсутствие номера пары у события без звонка."""
+    source = {**row(), "bellentrynumber_p": None, "discipline_ids": []}
+    assert _entry(source, datetime.now(UTC)).pair_number is None
+
+
 async def test_sync_reads_source_and_publishes_in_one_transaction(db):
     class AsyncSessionAdapter:
         @asynccontextmanager
