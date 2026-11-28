@@ -12,7 +12,7 @@ on:
       - "!backend/openapi/**/*.md"
       - "docker-compose.yml"
       - ".env.example"
-      - ".github/workflows/ci.yml"
+      - ".github/workflows/**"
   pull_request:
     paths:
       - "**/*.py"
@@ -24,7 +24,7 @@ on:
       - "!backend/openapi/**/*.md"
       - "docker-compose.yml"
       - ".env.example"
-      - ".github/workflows/ci.yml"
+      - ".github/workflows/**"
 
 jobs:
   backend:
